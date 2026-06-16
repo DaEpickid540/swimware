@@ -82,11 +82,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       root.style.setProperty("--color-primary", accent);
       root.style.setProperty("--color-primary-700", darken(accent));
       root.style.setProperty("--color-accent", accent);
+      // Marks that a custom accent is active so styles (e.g. the login
+      // gradient) can adapt instead of clashing with the brand colors.
+      root.setAttribute("data-custom-accent", "true");
       localStorage.setItem(K_ACCENT, accent);
     } else {
       root.style.removeProperty("--color-primary");
       root.style.removeProperty("--color-primary-700");
       root.style.removeProperty("--color-accent");
+      root.removeAttribute("data-custom-accent");
       localStorage.removeItem(K_ACCENT);
     }
   }, [accent]);

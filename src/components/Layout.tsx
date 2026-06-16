@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Sidebar } from "./shell/Sidebar";
 import { TopBar } from "./shell/TopBar";
 import { BottomNav } from "./shell/BottomNav";
+import { WelcomeGuide } from "./WelcomeGuide";
 import { IconClose } from "./icons";
 
 const TITLES: Record<string, string> = {
@@ -89,6 +90,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       <BottomNav />
+      <WelcomeGuide />
     </div>
   );
 }

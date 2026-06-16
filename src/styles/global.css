@@ -403,6 +403,101 @@ a {
   margin-left: auto;
 }
 
+/* First-run welcome guide */
+.welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+}
+.welcome__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+.welcome__card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--sp-6) var(--sp-5) var(--sp-5);
+  text-align: center;
+  animation: welcome-pop 0.2s ease;
+}
+@keyframes welcome-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome__card {
+    animation: none;
+  }
+}
+.welcome__skip {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.welcome__heading {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-500);
+  color: var(--color-primary);
+}
+.welcome__step {
+  min-height: 150px;
+}
+.welcome__icon {
+  font-size: 2.6rem;
+  margin-bottom: var(--sp-2);
+}
+.welcome__step h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-400);
+}
+.welcome__step p {
+  margin: 0;
+  color: var(--text-muted);
+}
+.welcome__dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: var(--sp-4) 0;
+}
+.welcome__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.welcome__dot.is-active {
+  background: var(--color-primary);
+  width: 22px;
+  border-radius: 4px;
+}
+.welcome__actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
 /* Toggle / switch row */
 .toggle-row {
   display: flex;
@@ -581,6 +676,30 @@ a {
   padding: var(--sp-5);
   background: var(--brand-gradient);
 }
+
+/* When a user has chosen a custom accent, drop the fixed blue→green brand
+   gradient (which would clash) in favor of a calm, theme-aware surface. */
+[data-custom-accent="true"] .auth-screen {
+  background: var(--bg);
+}
+/* Portal cards read on a dark gradient by default; on the solid custom
+   background give them the normal surface treatment so they stay legible. */
+[data-custom-accent="true"] .portal-wrap {
+  color: var(--text);
+}
+[data-custom-accent="true"] .portal-title {
+  color: var(--color-primary);
+  text-shadow: none;
+}
+[data-custom-accent="true"] .portal-card {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+[data-custom-accent="true"] .portal-card:hover {
+  background: var(--surface-2);
+}
 .auth-card {
   width: 100%;
   max-width: 420px;
@@ -646,9 +765,15 @@ a {
   opacity: 0.9;
 }
 .portal-back {
-  color: var(--color-primary);
-  display: inline-block;
-  margin-bottom: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.portal-back:hover {
+  background: var(--surface-2);
 }
 @media (max-width: 480px) {
   .portal-grid {

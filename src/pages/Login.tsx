@@ -138,7 +138,11 @@ export default function Login() {
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <button className="link portal-back" onClick={() => setPortal(null)}>
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm portal-back"
+          onClick={() => setPortal(null)}
+        >
           ← All portals
         </button>
         <h1 className="auth-title">{portalMeta.label} sign-in</h1>
