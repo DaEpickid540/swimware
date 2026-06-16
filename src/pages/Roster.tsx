@@ -1,7 +1,8 @@
 /**
- * Coach roster management: list swimmers on the coach's teams, with CSV export.
+ * Coach roster management: list swimmers on the coach's teams, with CSV export
+ * and a free "copy parent-email template" action (no paid email service).
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { collection, query, where } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
@@ -40,6 +41,24 @@ export default function Roster() {
     );
   }
 
+  // FREE alternative to paid email sending: build a parent-email template and
+  // copy it to the clipboard (recipients + body) so a coach can paste it into
+  // their own email client. No paid service, no Blaze, no server.
+  const [copied, setCopied] = useState(false);
+  async function copyEmailTemplate() {
+    const recipients = swimmers
+      .map((s) => s.linkedParentEmail)
+      .filter((e): e is string => !!e)
+      .join(", ");
+    const template =
+      `To (Bcc): ${recipients}\n\n` +
+      `Subject: Mason Rec Rays — Team Update\n\n` +
+      `Hi families,\n\n[Your message here]\n\nThank you,\nCoach`;
+    await navigator.clipboard?.writeText(template);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+
   if (loading) return <Spinner />;
 
   return (
@@ -48,9 +67,19 @@ export default function Roster() {
       <Card
         title={`${swimmers.length} swimmer(s)`}
         actions={
-          <button className="btn btn--sm" onClick={exportCsv} disabled={!swimmers.length}>
-            Export CSV
-          </button>
+          <span className="row-actions">
+            <button
+              className="btn btn--sm"
+              onClick={copyEmailTemplate}
+              disabled={!swimmers.length}
+              title="Copies parent emails + a message template to your clipboard (free — no email service needed)"
+            >
+              {copied ? "Copied ✓" : "Copy parent email"}
+            </button>
+            <button className="btn btn--sm" onClick={exportCsv} disabled={!swimmers.length}>
+              Export CSV
+            </button>
+          </span>
         }
       >
         {swimmers.length === 0 ? (

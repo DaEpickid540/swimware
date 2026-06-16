@@ -172,6 +172,7 @@ export interface ConsentInput {
   termsVersion: string;
   privacyVersion: string;
   waiverVersion: string;
+  parentConsentVersion: string;
 }
 
 /**
@@ -219,6 +220,7 @@ export async function acceptInvite(
       terms: { version: consents.termsVersion, at: now },
       privacy: { version: consents.privacyVersion, at: now },
       waiver: { version: consents.waiverVersion, at: now },
+      parent: { version: consents.parentConsentVersion, at: now },
     },
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

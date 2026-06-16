@@ -16,7 +16,7 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/services/firebase";
 import { acceptInvite } from "@/services/onboarding";
 import { useAuth } from "@/context/AuthContext";
-import { LEGAL_VERSIONS, APP_NAME } from "@/config/constants";
+import { LEGAL_VERSIONS, APP_NAME, PARENT_CONSENT_TEXT } from "@/config/constants";
 import { Card, Spinner } from "@/components/ui";
 import type { InviteToken } from "@/types/models";
 
@@ -39,6 +39,7 @@ export default function InviteRegister() {
   const [emergency, setEmergency] = useState("");
   const [medical, setMedical] = useState("");
   const [accepted, setAccepted] = useState(false);
+  const [parentConsent, setParentConsent] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -56,6 +57,8 @@ export default function InviteRegister() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!accepted) return setError("You must accept the terms, privacy policy, and waiver.");
+    if (!parentConsent)
+      return setError("A parent or legal guardian must provide consent to continue.");
     setError(null);
     setState("submitting");
     try {
@@ -76,6 +79,7 @@ export default function InviteRegister() {
           termsVersion: LEGAL_VERSIONS.terms,
           privacyVersion: LEGAL_VERSIONS.privacy,
           waiverVersion: LEGAL_VERSIONS.waiver,
+          parentConsentVersion: LEGAL_VERSIONS.parentConsent,
         }
       );
       await refresh(); // picks up the new swimmer role
@@ -152,10 +156,26 @@ export default function InviteRegister() {
               <input id="r-medical" className="input" value={medical} onChange={(e) => setMedical(e.target.value)} placeholder='e.g. "allergic to chlorine" — no diagnoses' />
             </div>
 
+            <div className="callout callout--safety field--full" role="note">
+              <strong>Youth-safety notice:</strong> this program is for minors.
+              Registration must be completed by a parent/legal guardian. All team
+              communication is <strong>group-based and monitored</strong> — there is
+              no private adult–minor messaging.
+            </div>
+
             <label className="checkbox field--full">
               <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
               I have read and accept the Terms of Use, Privacy Policy, and Liability Waiver
               (v{LEGAL_VERSIONS.terms}).
+            </label>
+
+            <label className="checkbox field--full">
+              <input
+                type="checkbox"
+                checked={parentConsent}
+                onChange={(e) => setParentConsent(e.target.checked)}
+              />
+              {PARENT_CONSENT_TEXT}
             </label>
 
             {error && <p className="form-error field--full" role="alert">{error}</p>}

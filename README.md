@@ -5,6 +5,10 @@ for a swim club, with three roles (admin / coach / swimmer), invite-only swimmer
 onboarding, team chat, events & RSVPs, news, performance & attendance, and
 user-supplied AI tools.
 
+> 🛡️ **Youth-safety, privacy & cost controls are documented in
+> [COMPLIANCE.md](COMPLIANCE.md)** (group-only monitored chat, invite-only minors,
+> team-scoped data access, staff-only AI, parental consent, free-tier posture).
+
 > **Runs entirely on the free Spark plan — no Cloud Functions required.** Roles
 > live in `users/{uid}.role` and are enforced by **Firestore security rules**:
 > admins are gated to a hard-coded email allow-list, coaches are admin-approved,

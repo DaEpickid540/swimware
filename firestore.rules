@@ -78,7 +78,14 @@ service cloud.firestore {
     // users — the role/profile document (also the trust anchor)
     // ---------------------------------------------------------------------
     match /users/{userId} {
-      allow read: if isAdmin() || isSelf(userId) || isStaff();
+      // Minors' PII (age, parent/emergency contacts, medical notes) is tightly
+      // scoped: admins see all; a user sees themselves; a COACH may read a user
+      // ONLY if they share at least one team. A coach can never read swimmers
+      // (or staff) outside their own teams. (Ohio youth-data minimization.)
+      allow read: if isAdmin()
+        || isSelf(userId)
+        || (isCoach()
+            && resource.data.get('assignedTeams', []).hasAny(userDoc().get('assignedTeams', [])));
 
       // CREATE — three legitimate provisioning paths, all writing your OWN doc:
       allow create: if isSelf(userId) && (
@@ -187,11 +194,16 @@ service cloud.firestore {
     // signups (RSVPs)
     // ---------------------------------------------------------------------
     match /signups/{signupId} {
-      allow read: if isStaff() || isSelf(resource.data.swimmerId);
+      // Coaches read RSVPs only for their own teams; swimmers read their own.
+      allow read: if isAdmin()
+        || isSelf(resource.data.swimmerId)
+        || (isCoach() && inTeam(resource.data.teamId));
       allow create: if isSelf(request.resource.data.swimmerId)
         && notBanned()
         && inTeam(request.resource.data.teamId);
-      allow update, delete: if isStaff() || isSelf(resource.data.swimmerId);
+      allow update, delete: if isAdmin()
+        || isSelf(resource.data.swimmerId)
+        || (isCoach() && inTeam(resource.data.teamId));
     }
 
     // ---------------------------------------------------------------------
@@ -217,11 +229,27 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------------
     // chats + messages
+    // -----------------------------------------------------------------------
+    // YOUTH-SAFETY: the ONLY chat that can exist is one canonical GROUP chat
+    // per team (chat doc id == teamId, type == 'team_chat'). There is no path
+    // to create a 1:1 / private chat, so an adult can never open a private
+    // channel with a minor. Every message is visible to the whole team and to
+    // coaches/admins (moderation), satisfying the "group-based, monitored,
+    // parent-reviewable" requirement. Ohio Rev. Code §2907-aligned design.
     // ---------------------------------------------------------------------
     match /chats/{chatId} {
       allow read: if isStaff() || inTeam(resource.data.teamId);
-      allow create: if isStaff();
-      allow update, delete: if coachesTeam(resource.data.teamId);
+      // Canonical team group chat only: id must equal the teamId, type fixed,
+      // and the creator must coach that team.
+      allow create: if isStaff()
+        && request.resource.data.type == 'team_chat'
+        && chatId == request.resource.data.teamId
+        && coachesTeam(request.resource.data.teamId);
+      // Only coaches/admins may adjust moderation (mutedUsers); no type change.
+      allow update: if coachesTeam(resource.data.teamId)
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.teamId == resource.data.teamId;
+      allow delete: if coachesTeam(resource.data.teamId);
 
       match /messages/{messageId} {
         allow read: if isStaff()
@@ -233,6 +261,8 @@ service cloud.firestore {
               || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId))
           && !(uid() in
                get(/databases/$(database)/documents/chats/$(chatId)).data.get('mutedUsers', []));
+        // Authors may edit/delete their own message; staff moderate any.
+        // (No hard delete of others' content beyond moderation = retained trail.)
         allow update, delete: if isSelf(resource.data.senderId) || isStaff();
       }
     }
@@ -263,8 +293,12 @@ service cloud.firestore {
       allow create, update, delete: if isStaff();
     }
     match /attendance/{attId} {
-      allow read: if isStaff() || isSelf(resource.data.swimmerId);
-      allow create, update, delete: if isStaff();
+      // Coaches read attendance only for their own teams; swimmers read theirs.
+      allow read: if isAdmin()
+        || isSelf(resource.data.swimmerId)
+        || (isCoach() && inTeam(resource.data.teamId));
+      allow create, update, delete: if isAdmin()
+        || (isCoach() && inTeam(request.resource.data.get('teamId', resource.data.teamId)));
     }
 
     // ---------------------------------------------------------------------

@@ -16,10 +16,25 @@ export const GOMOTION_CALENDAR_URL =
 
 /** Current versions of legal text; bumping forces re-acceptance (see admin). */
 export const LEGAL_VERSIONS = {
-  terms: "2026-01-01",
-  privacy: "2026-01-01",
-  waiver: "2026-01-01",
+  terms: "2026-06-16",
+  privacy: "2026-06-16",
+  waiver: "2026-06-16",
+  parentConsent: "2026-06-16",
 };
+
+/**
+ * Parent/guardian attestation shown during invite registration. The app is
+ * designed for youth swimmers (minors); registration must be completed by a
+ * parent or legal guardian. This supports COPPA (parental consent for under-13)
+ * and Ohio youth-program expectations. (This is product copy, not legal advice
+ * — have counsel review before production use.)
+ */
+export const PARENT_CONSENT_TEXT =
+  "I am the parent or legal guardian of this swimmer (or am 18+ registering " +
+  "myself). I consent to the collection of the information on this form for the " +
+  "purpose of running the swim program, I understand that team communication is " +
+  "group-based and monitored (no private adult–minor messaging), and I " +
+  "understand I can request review or deletion of my swimmer's data at any time.";
 
 export const EVENT_TYPE_LABELS: Record<string, string> = {
   practice: "Practice",

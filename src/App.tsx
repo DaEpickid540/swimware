@@ -80,7 +80,8 @@ export default function App() {
                 <Route path="/events" element={<Page><Events /></Page>} />
                 <Route path="/news" element={<Page><News /></Page>} />
                 <Route path="/chat" element={<Page><Chat /></Page>} />
-                <Route path="/ai" element={<Page><AiTools /></Page>} />
+                {/* AI tools are staff-only (no minors using open AI / keys) */}
+                <Route path="/ai" element={<Page allow={["admin", "coach"]}><AiTools /></Page>} />
 
                 {/* Staff */}
                 <Route path="/roster" element={<Page allow={["coach", "admin"]}><Roster /></Page>} />

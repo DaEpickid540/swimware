@@ -15,6 +15,9 @@ interface AppSettings {
   allowedCoachDomains: string;
   legal: { termsVersion: string; terms: string; privacy: string; waiver: string };
   logoUrl?: string;
+  // Paid (Blaze) features — OFF by default. When off, the documented FREE
+  // alternative is used and the app stays fully functional.
+  emailNotificationsEnabled?: boolean; // needs Blaze Cloud Functions + email ext
 }
 
 const DEFAULTS: AppSettings = {
@@ -22,11 +25,12 @@ const DEFAULTS: AppSettings = {
   primaryColor: "#0b6bcb",
   allowedCoachDomains: "",
   legal: {
-    termsVersion: "2026-01-01",
+    termsVersion: "2026-06-16",
     terms: "Standard terms of use…",
     privacy: "We collect minimal data needed to run the team…",
     waiver: "I acknowledge the risks of swimming activities…",
   },
+  emailNotificationsEnabled: false,
 };
 
 export default function Settings() {
@@ -96,6 +100,36 @@ export default function Settings() {
           {uploading && <Spinner label="Uploading…" />}
           {settings.logoUrl && <img className="logo-preview" src={settings.logoUrl} alt="Club logo preview" />}
         </div>
+      </Card>
+
+      <Card title="Paid (Blaze) features">
+        <div className="callout callout--warn" role="note">
+          <strong>⚙️ These features need the Firebase Blaze plan and may incur
+          costs.</strong>{" "}
+          The app is 100% functional on the free Spark plan with them OFF — a free
+          alternative is used automatically.
+        </div>
+        <label className="toggle-row">
+          <span>
+            <strong>Email notifications</strong>
+            <br />
+            <span className="muted">
+              Sends email to coaches on new sign-ups / RSVPs. Requires Blaze Cloud
+              Functions + a free email extension.{" "}
+              <strong>Free alternative (used when OFF):</strong> in-app
+              notifications + “copy email template” buttons.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={!!settings.emailNotificationsEnabled}
+            onChange={(e) =>
+              setSettings({ ...settings, emailNotificationsEnabled: e.target.checked })
+            }
+            aria-label="Enable email notifications (Blaze, may incur costs)"
+          />
+        </label>
       </Card>
 
       <Card title="Coach access">

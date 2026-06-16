@@ -17,12 +17,14 @@ import { loadPreferences, savePreferences } from "@/services/ai/aiClient";
 import type { AiProvider } from "@/services/ai/types";
 import { summarizeWeek, draftAnnouncement, reviewTeamCalendar } from "@/services/ai/prompts";
 
-const PROVIDERS: { id: AiProvider; label: string }[] = [
-  { id: "groq", label: "Groq" },
-  { id: "openai", label: "OpenAI" },
-  { id: "gemini", label: "Google Gemini" },
-  { id: "claude", label: "Anthropic Claude" },
-  { id: "web_scraper", label: "Web scraper API" },
+// Ordered so the recommended free option (Groq) and the recommended
+// highest-quality option (Claude) surface first.
+const PROVIDERS: { id: AiProvider; label: string; note: string; cost: "free" | "paid" }[] = [
+  { id: "groq", label: "Groq — recommended (free tier, very fast)", note: "Generous free tier with fast inference. Best choice for no-cost use.", cost: "free" },
+  { id: "claude", label: "Anthropic Claude — recommended (best quality)", note: "Highest-quality, safest responses. Pay-per-token; check pricing first.", cost: "paid" },
+  { id: "gemini", label: "Google Gemini", note: "Has a free tier; paid above limits. Review pricing.", cost: "paid" },
+  { id: "openai", label: "OpenAI GPT", note: "Pay-per-token. Review pricing before enabling.", cost: "paid" },
+  { id: "web_scraper", label: "Web scraper API (your endpoint)", note: "Cost depends on the endpoint you configure.", cost: "paid" },
 ];
 
 export default function AiTools() {
@@ -81,10 +83,30 @@ export default function AiTools() {
     <div className="page">
       <h1 className="page__title">AI Tools</h1>
 
+      <div className="callout callout--warn" role="note">
+        <strong>💸 Heads up — most AI providers charge per request/token.</strong>
+        <ul>
+          <li>
+            <strong>Best free option:</strong> <em>Groq</em> — a generous free tier
+            with very fast responses.
+          </li>
+          <li>
+            <strong>Best quality:</strong> <em>Anthropic Claude</em> — highest
+            quality and safest, but pay-per-token. Check pricing before enabling.
+          </li>
+          <li>
+            You bring your <strong>own</strong> key — there are no shared or hidden
+            costs. Review each provider’s pricing page first.
+          </li>
+        </ul>
+      </div>
+
       <Card title="Your AI provider &amp; key" accent>
         <p className="muted">
-          Keys are stored only in <strong>this browser</strong> and sent directly
-          to your chosen provider — never to our servers or Firestore.
+          🔒 Keys are stored only in <strong>this browser</strong> (localStorage)
+          and sent directly to your chosen provider — never to our servers or
+          Firestore. Don’t paste a key on a shared/public computer, and never
+          commit keys to code.
         </p>
         <div className="field">
           <label htmlFor="ai-provider">Provider</label>
@@ -100,6 +122,12 @@ export default function AiTools() {
               </option>
             ))}
           </select>
+          <p className="muted" aria-live="polite">
+            {PROVIDERS.find((p) => p.id === prefs.preferredProvider)?.note}{" "}
+            {PROVIDERS.find((p) => p.id === prefs.preferredProvider)?.cost === "free"
+              ? "✅ Free tier available."
+              : "⚠️ May incur costs."}
+          </p>
         </div>
         <div className="field">
           <label htmlFor="ai-key">API key</label>

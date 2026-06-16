@@ -32,8 +32,9 @@ const ALL: NavItem[] = [
   { to: "/chat", label: "Chat", Icon: IconChat, roles: ["admin", "coach", "swimmer"], primary: true },
   { to: "/news", label: "News", Icon: IconNews, roles: ["admin", "coach", "swimmer"], primary: true },
   { to: "/roster", label: "Roster", Icon: IconRoster, roles: ["admin", "coach"] },
-  { to: "/swimmer/performance", label: "My Progress", Icon: IconChart, roles: ["swimmer"] },
-  { to: "/ai", label: "AI Tools", Icon: IconSparkles, roles: ["admin", "coach", "swimmer"], primary: true },
+  { to: "/swimmer/performance", label: "My Progress", Icon: IconChart, roles: ["swimmer"], primary: true },
+  // AI tools are STAFF-ONLY (adults). Minors never see API-key entry or open AI.
+  { to: "/ai", label: "AI Tools", Icon: IconSparkles, roles: ["admin", "coach"], primary: true },
   { to: "/settings", label: "Settings", Icon: IconSettings, roles: ["admin"] },
 ];
 

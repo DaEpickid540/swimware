@@ -1,8 +1,12 @@
 /**
  * Swimmer dashboard: next events, recent announcements, quick link to their
- * own performance log, plus the limited swimmer AI helpers.
+ * own performance log.
+ *
+ * YOUTH-SAFETY: swimmers (minors) have NO AI tools and NO API-key entry — AI is
+ * staff-only (adults). This avoids minors sending data to third-party AI
+ * providers or handling paid API keys. See /ai route guard + navItems.
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { collection, limit, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/services/firebase";
@@ -10,7 +14,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useCollection";
 import type { SwimEvent, NewsItem } from "@/types/models";
 import { Card, Spinner, EmptyState, Badge } from "@/components/ui";
-import { explainSchedule, motivationalMessage } from "@/services/ai/prompts";
 
 export default function SwimmerDashboard() {
   const { profile, assignedTeams } = useAuth();
@@ -34,27 +37,6 @@ export default function SwimmerDashboard() {
     []
   );
   const { data: news } = useQueryData<NewsItem>(newsQ);
-
-  const [aiOut, setAiOut] = useState("");
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiErr, setAiErr] = useState<string | null>(null);
-
-  async function run(task: "schedule" | "motivate") {
-    setAiBusy(true);
-    setAiErr(null);
-    setAiOut("");
-    try {
-      const res =
-        task === "schedule"
-          ? await explainSchedule(events)
-          : await motivationalMessage(`${profile?.displayName} has upcoming practices.`);
-      setAiOut(res.text);
-    } catch (e) {
-      setAiErr(e instanceof Error ? e.message : "AI request failed.");
-    } finally {
-      setAiBusy(false);
-    }
-  }
 
   if (loading) return <Spinner />;
 
@@ -98,27 +80,6 @@ export default function SwimmerDashboard() {
           )}
         </Card>
       </div>
-
-      <Card title="AI helpers" accent>
-        <p className="muted">
-          Safe, swim-only helpers. Add your own API key in{" "}
-          <Link className="link" to="/ai">
-            AI Tools
-          </Link>{" "}
-          first.
-        </p>
-        <div className="btn-row">
-          <button className="btn" onClick={() => run("schedule")} disabled={aiBusy}>
-            Explain my schedule
-          </button>
-          <button className="btn" onClick={() => run("motivate")} disabled={aiBusy}>
-            Motivate me
-          </button>
-        </div>
-        {aiBusy && <Spinner label="Thinking…" />}
-        {aiErr && <p className="form-error" role="alert">{aiErr}</p>}
-        {aiOut && <p className="ai-output" aria-live="polite">{aiOut}</p>}
-      </Card>
     </div>
   );
 }

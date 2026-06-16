@@ -72,6 +72,12 @@ export function ChatRoom({ chatId }: { chatId: string }) {
 
   return (
     <div className="chat" role="region" aria-label="Team chat">
+      {/* Youth-safety transparency notice (Ohio adult–minor communication). */}
+      <p className="chat__notice" role="note">
+        👥 Group chat — visible to your whole team and coaches, and monitored for
+        safety. There is no private messaging. Parents/guardians may review these
+        messages via the swimmer’s account.
+      </p>
       {/* Off-screen live region announces new messages without moving focus. */}
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {liveMessage}
