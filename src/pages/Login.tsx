@@ -1,6 +1,8 @@
 /**
- * Login + coach self-registration. NOTE: there is intentionally NO swimmer
- * sign-up here — swimmers join only via an invite link (/invite/:token).
+ * Login + account creation. NOTE: there is intentionally NO swimmer sign-up
+ * here — swimmers join only via an invite link (/invite/:token). New coach
+ * accounts have no role until an admin approves them (they land on /pending,
+ * where they can request access).
  */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +11,7 @@ import { APP_NAME } from "@/config/constants";
 import { Card } from "@/components/ui";
 
 export default function Login() {
-  const { signIn, signInWithGoogle, signUpCoach, refresh } = useAuth();
+  const { signIn, signInWithGoogle, signUpEmail, refresh } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "coach">("signin");
   const [email, setEmail] = useState("");
@@ -24,7 +26,7 @@ export default function Login() {
     setBusy(true);
     try {
       if (mode === "signin") await signIn(email, password);
-      else await signUpCoach(email, password, name);
+      else await signUpEmail(email, password);
       await refresh();
       // The index route ("/") redirects to the correct dashboard by role.
       navigate("/", { replace: true });

@@ -14,7 +14,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/services/firebase";
-import { callAcceptInvite } from "@/services/functions";
+import { acceptInvite } from "@/services/onboarding";
 import { useAuth } from "@/context/AuthContext";
 import { LEGAL_VERSIONS, APP_NAME } from "@/config/constants";
 import { Card, Spinner } from "@/components/ui";
@@ -59,25 +59,26 @@ export default function InviteRegister() {
     setError(null);
     setState("submitting");
     try {
-      // Create the Auth account first (no privileges yet — rules deny all until
-      // acceptInvite grants the swimmer claim).
-      await createUserWithEmailAndPassword(auth, email, password);
-      await callAcceptInvite({
+      // Create the Auth account first (no role yet — rules deny everything
+      // until acceptInvite atomically writes the swimmer doc + burns the token).
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await acceptInvite(
+        cred.user,
         token,
-        profile: {
+        {
           displayName,
           age: age ? Number(age) : undefined,
           linkedParentEmail: parentEmail || undefined,
           emergencyContact: emergency || undefined,
           medicalNotes: medical || undefined,
         },
-        consents: {
+        {
           termsVersion: LEGAL_VERSIONS.terms,
           privacyVersion: LEGAL_VERSIONS.privacy,
           waiverVersion: LEGAL_VERSIONS.waiver,
-        },
-      });
-      await refresh(); // picks up the new swimmer claim
+        }
+      );
+      await refresh(); // picks up the new swimmer role
       setState("done");
       setTimeout(() => navigate("/", { replace: true }), 1200);
     } catch (e2) {

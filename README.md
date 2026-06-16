@@ -5,10 +5,13 @@ for a swim club, with three roles (admin / coach / swimmer), invite-only swimmer
 onboarding, team chat, events & RSVPs, news, performance & attendance, and
 user-supplied AI tools.
 
-> **Security posture in one line:** roles live in **Firebase Auth custom claims**
-> set by **Cloud Functions** (never trusted from the client), swimmers can join
-> **only via a single-use, expiring invite token** validated server-side, and
-> **AI API keys never leave the browser**.
+> **Runs entirely on the free Spark plan — no Cloud Functions required.** Roles
+> live in `users/{uid}.role` and are enforced by **Firestore security rules**:
+> admins are gated to a hard-coded email allow-list, coaches are admin-approved,
+> and swimmers can join **only by redeeming a single-use, expiring invite token**
+> (validated atomically in the rules via a write batch). **AI API keys never
+> leave the browser.** Cloud Functions are included but **optional** (email / FCM
+> fan-out) and only needed if you later upgrade to Blaze.
 
 ---
 
@@ -75,18 +78,19 @@ swimware/
 get `role` + `assignedTeams`. `App.tsx`'s `/` route redirects to the right
 dashboard. `ProtectedRoute` is a UX gate; Firestore rules are the real gate.
 
-**Admin bootstrap** — when an Auth account is created with one of the hard-coded
-admin emails (`functions/src/config.ts`), the `onAuthUserCreate` trigger grants
-the `admin` claim and creates the profile doc.
+**Admin bootstrap** — on sign-in, `provisionOnSignIn()` writes the user's own
+`users/{uid}` doc with role `admin` *iff* their email is in the allow-list; the
+Firestore rule permits this only for allow-listed emails, so it can't be forged.
 
 **Invite-only swimmer onboarding**
-1. Coach clicks *Generate invite link* → `createInvite` callable mints a
-   single-use, 7-day token (doc id = 32-byte CSPRNG bearer secret).
+1. Coach clicks *Generate invite link* → `createInviteToken()` writes a
+   single-use, 7-day token (doc id = 32-byte Web-Crypto bearer secret); rules
+   require the caller to coach that team.
 2. Swimmer opens `/invite/:token`, fills the form, accepts consents, and creates
-   an Auth account (no privileges yet).
-3. Client calls `acceptInvite`, which **transactionally** validates+burns the
-   token, writes the swimmer profile, adds them to the roster, and grants the
-   `swimmer` claim. No other path creates a swimmer.
+   an Auth account (no role yet — rules deny everything).
+3. Client `acceptInvite()` runs a **write batch**: create swimmer doc + flip the
+   token `used` + add to roster. Rules reject it unless the token is valid and
+   unused, so the token is single-use and no other path creates a swimmer.
 
 ## Local setup
 ```bash
@@ -172,17 +176,26 @@ The GoMotion calendar URL is wired as a **reference** only (`constants.ts`); the
 "Review the team calendar" tool passes it to the user's web-scraper provider — the
 app never scrapes it directly.
 
-## Security model
-- **Roles** = Auth custom claims (`role`, `assignedTeams`), set only by Cloud
-  Functions. Firestore/Storage rules trust claims, so the client cannot escalate.
-- **Default-deny** rules; every collection is explicitly scoped by role and team
-  membership. Sensitive writes (swimmer creation, role changes, audit logs) are
-  Admin-SDK-only and blocked for clients.
-- **Invite tokens** are single-use + expiring, consumed in a transaction.
-- **Audit log** (`auditLogs`) is append-only, admin-readable, written server-side
-  for role changes, deactivations, invite create/accept, and admin bootstrap.
-- **Consent/waivers** are versioned; bumping a version in admin Settings forces
-  re-acceptance.
+## Security model (no Cloud Functions)
+- **Roles** = `users/{uid}.role`, read in rules via `get()`. Each role can only
+  be obtained through a rule-gated path, so the client cannot escalate:
+  - **admin** — a user may set their *own* role to `admin` only if their email is
+    in the hard-coded allow-list in `firestore.rules` (and mirrored in
+    `src/services/onboarding.ts`).
+  - **coach** — granted by an admin via `pendingUsers` pre-registration or by
+    approving an `accessRequests` entry. Coaches never self-promote.
+  - **swimmer** — created only in the same write batch that redeems a valid,
+    unused, unexpired `inviteTokens` doc (cross-doc `get()` check). The token
+    flips `used:false→true`, so replays fail — single use enforced by rules.
+- **Default-deny**; every collection is scoped by role and `assignedTeams`.
+- **Storage rules** read the same role doc cross-service via `firestore.get()`.
+- **Audit log** (`auditLogs`) is append-only (no client edits/deletes),
+  admin-readable; the app appends entries for role changes, invites, etc.
+- **Consent/waivers** are versioned; bumping a version forces re-acceptance.
+
+> The `functions/` directory (Admin-SDK version of these flows + email/FCM
+> fan-out) is retained for teams that upgrade to **Blaze**, but the app does not
+> depend on it.
 
 ## Data model
 See `src/types/models.ts` for the full typed schema:

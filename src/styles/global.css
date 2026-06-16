@@ -339,6 +339,13 @@ a {
   gap: var(--sp-2);
   flex-wrap: wrap;
 }
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
 .link {
   background: none;
   border: 0;

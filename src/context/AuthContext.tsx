@@ -1,7 +1,10 @@
 /**
- * Auth state + role. The role comes from the ID token's custom claims (set
- * server-side by Cloud Functions), NOT from anything the client can set. We
- * also load the user's Firestore profile doc for display fields.
+ * Auth state + role.
+ *
+ * Role model (no Cloud Functions): the role lives in users/{uid}.role and is
+ * provisioned on sign-in by provisionOnSignIn() (admin bootstrap / coach
+ * pre-registration). Firestore rules trust this doc because the only way to
+ * obtain each role is gated server-side by the rules themselves.
  */
 
 import {
@@ -20,8 +23,9 @@ import {
   signInWithPopup,
   type User,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/services/firebase";
+import { provisionOnSignIn } from "@/services/onboarding";
 import type { AppUser, Role } from "@/types/models";
 
 interface AuthState {
@@ -32,7 +36,7 @@ interface AuthState {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signUpCoach: (email: string, password: string, displayName: string) => Promise<void>;
+  signUpEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -54,14 +58,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAssignedTeams([]);
       return;
     }
-    // Force-refresh the token so freshly-minted claims (role/teams) are present.
-    const tokenResult = await user.getIdTokenResult(true);
     setFirebaseUser(user);
-    setRole((tokenResult.claims.role as Role) ?? null);
-    setAssignedTeams((tokenResult.claims.assignedTeams as string[]) ?? []);
+
+    // Provision (admin bootstrap / coach pre-registration) then load the doc.
+    // Failures here are non-fatal — the user simply lands on /pending.
+    await provisionOnSignIn(user).catch(() => null);
 
     const snap = await getDoc(doc(db, "users", user.uid));
-    setProfile(snap.exists() ? ({ id: snap.id, ...snap.data() } as AppUser) : null);
+    if (snap.exists()) {
+      const data = { id: snap.id, ...snap.data() } as AppUser;
+      setProfile(data);
+      setRole(data.role ?? null);
+      setAssignedTeams(Array.isArray(data.assignedTeams) ? data.assignedTeams : []);
+    } else {
+      setProfile(null);
+      setRole(null);
+      setAssignedTeams([]);
+    }
   }
 
   useEffect(() => {
@@ -86,24 +99,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn: async (email, password) => {
         await signInWithEmailAndPassword(auth, email, password);
       },
-      // Google sign-in. Admins are auto-promoted by the onAuthUserCreate
-      // Cloud Function; everyone else lands on /pending until a role is granted
-      // (coach approval or swimmer invite). We never auto-grant a role here.
       signInWithGoogle: async () => {
         await signInWithPopup(auth, googleProvider);
       },
-      // Coaches may self-register; they get the 'coach' role only after an admin
-      // confirms (rules allow them to create their own profile doc as 'coach').
-      signUpCoach: async (email, password, displayName) => {
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await setDoc(doc(db, "users", cred.user.uid), {
-          role: "coach",
-          email: cred.user.email,
-          displayName,
-          assignedTeams: [],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+      // Email/password sign-up. No role is granted here — provisionOnSignIn
+      // decides (admin email → admin; pre-registered → coach; else /pending).
+      signUpEmail: async (email, password) => {
+        await createUserWithEmailAndPassword(auth, email, password);
       },
       signOut: () => fbSignOut(auth),
       refresh: () => hydrate(auth.currentUser),

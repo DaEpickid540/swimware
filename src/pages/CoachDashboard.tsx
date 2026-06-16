@@ -9,7 +9,7 @@ import { collection, query, where } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useCollection";
-import { callCreateInvite } from "@/services/functions";
+import { createInviteToken } from "@/services/onboarding";
 import type { Team, SwimEvent } from "@/types/models";
 import { Card, Spinner, EmptyState } from "@/components/ui";
 
@@ -47,12 +47,14 @@ export default function CoachDashboard() {
     setInviteUrl(null);
     setBusy(true);
     try {
-      const res = await callCreateInvite({
+      if (!firebaseUser) throw new Error("Not signed in.");
+      const res = await createInviteToken({
         teamId: selectedTeam || teams[0]?.id,
+        coachId: firebaseUser.uid,
         intendedSwimmerName: swimmerName || undefined,
         parentEmail: parentEmail || undefined,
       });
-      const url = `${window.location.origin}/invite/${res.data.token}`;
+      const url = `${window.location.origin}/invite/${res.token}`;
       setInviteUrl(url);
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Could not create invite.");

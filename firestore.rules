@@ -1,101 +1,163 @@
 rules_version = '2';
 
 // =============================================================================
-// Mason Rec Rays — Firestore Security Rules
+// Mason Rec Rays — Firestore Security Rules  (NO Cloud Functions / Spark plan)
 // -----------------------------------------------------------------------------
-// Design principles:
-//   * Roles live in CUSTOM CLAIMS (request.auth.token.role), set server-side by
-//     Cloud Functions (see functions/src/index.ts). Claims cannot be forged by
-//     the client, so they are the trust anchor for role checks. We avoid reading
-//     the user doc for role to keep rules cheap and tamper-proof.
-//   * Sensitive / integrity-critical writes (creating swimmers from an invite,
-//     changing roles, audit logs) are NOT allowed directly from the client at
-//     all — they go through Cloud Functions which use the Admin SDK and bypass
-//     these rules. Such collections are therefore read-mostly here.
-//   * Team membership is expressed as arrays on the team doc (coaches[],
-//     swimmers[]) and mirrored on the user doc (assignedTeams[]). We check
-//     membership via the user's own assignedTeams claim/array to avoid extra
-//     document reads where possible.
+// Roles live in the user's own document: users/{uid}.role ∈ admin|coach|swimmer.
+// Rules read it with get(); there are no custom claims, so the whole app runs
+// on the free Spark plan. Trust is anchored two ways:
+//   * ADMIN: a user may set their OWN role to 'admin' only if their email is in
+//     the hard-coded ADMIN_EMAILS list below (so admin can't be forged).
+//   * SWIMMER: a swimmer doc can only be created in the same breath as redeeming
+//     a valid, unused, unexpired invite token (cross-doc get() check). Replays
+//     fail because the token flips to used=true.
+//   * COACH: granted by an admin (pendingUsers pre-registration or a direct
+//     role edit). Coaches cannot self-promote.
+// Team membership is users/{uid}.assignedTeams[] (an array of team IDs).
 // =============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------------------------------------------------------------------
-    // Helper functions
-    // ---------------------------------------------------------------------
+    // ---- Hard-coded admin allow-list (Gmail dot-variants included) ----------
+    function adminEmails() {
+      return [
+        'sarvin.sukhe@gmail.com',
+        'sarvinsukhe@gmail.com',
+        'daepickid540@gmail.com'
+      ];
+    }
+    function callerEmail() {
+      return request.auth != null ? request.auth.token.email.lower() : '';
+    }
+    function isAdminEmail() {
+      return callerEmail() in adminEmails();
+    }
+
+    // ---- Identity / role helpers (role read from the user's own doc) --------
     function isSignedIn() {
       return request.auth != null;
     }
-
+    function uid() {
+      return request.auth.uid;
+    }
+    function isSelf(userId) {
+      return isSignedIn() && uid() == userId;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
     function role() {
-      // Returns the caller's role claim, or '' if unauthenticated / unset.
-      return isSignedIn() ? (request.auth.token.role) : '';
+      return isSignedIn() ? userDoc().role : '';
     }
-
     function isAdmin() {
-      return role() == 'admin';
+      return isSignedIn() && role() == 'admin';
     }
-
     function isCoach() {
-      return role() == 'coach';
+      return isSignedIn() && role() == 'coach';
     }
-
     function isStaff() {
-      // Coaches and admins share most management privileges.
       return isAdmin() || isCoach();
     }
-
-    function isSelf(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function notBanned() {
+      return isSignedIn() && userDoc().get('active', true) == true;
     }
-
-    // True if the caller belongs to teamId. assignedTeams is a custom claim
-    // (array of team IDs) kept in sync by Cloud Functions when rosters change.
+    // Team membership from the caller's own assignedTeams array.
     function inTeam(teamId) {
-      return isSignedIn()
-        && request.auth.token.assignedTeams is list
-        && teamId in request.auth.token.assignedTeams;
+      return isSignedIn() && teamId in userDoc().get('assignedTeams', []);
     }
-
-    // True if the caller is a coach assigned to this team (or an admin).
     function coachesTeam(teamId) {
       return isAdmin() || (isCoach() && inTeam(teamId));
     }
-
-    // Only allow updates that DO NOT change the listed protected fields.
     function unchanged(field) {
       return !(field in request.resource.data)
         || request.resource.data[field] == resource.data[field];
     }
 
     // ---------------------------------------------------------------------
-    // users — profile documents
+    // users — the role/profile document (also the trust anchor)
     // ---------------------------------------------------------------------
     match /users/{userId} {
-      // Anyone signed in can read staff-visible directory info; admins read all.
-      // Swimmers may read their own doc and (limited) teammates handled in app.
       allow read: if isAdmin() || isSelf(userId) || isStaff();
 
-      // Account creation is performed by Cloud Functions (invite flow / admin
-      // promotion). The only client-side create we allow is a coach creating
-      // their OWN initial profile doc right after Auth sign-up, with role
-      // locked to 'coach' (admins are minted server-side via custom claims).
-      allow create: if isSelf(userId)
-        && request.resource.data.role == 'coach'
-        && request.resource.data.email == request.auth.token.email;
+      // CREATE — three legitimate provisioning paths, all writing your OWN doc:
+      allow create: if isSelf(userId) && (
+        // (a) Admin bootstrap: email is in the allow-list.
+        (request.resource.data.role == 'admin' && isAdminEmail()) ||
+        // (b) Coach pre-registered by an admin in pendingUsers.
+        (request.resource.data.role == 'coach' && pendingRoleIs('coach')) ||
+        // (c) Swimmer redeeming a valid invite token (see validInvite()).
+        (request.resource.data.role == 'swimmer' &&
+         request.resource.data.assignedTeams is list &&
+         request.resource.data.assignedTeams.size() == 1 &&
+         validInvite(request.resource.data.get('invitedVia', ''),
+                     request.resource.data.assignedTeams[0]))
+      );
 
-      // Users may update a safe subset of their own profile. role, email,
-      // assignedTeams and consent records are protected (server-managed).
+      // UPDATE — admin can edit anyone; admin-email holder may self-promote to
+      // admin; otherwise you may edit only safe fields of your own doc.
       allow update: if isAdmin()
+        || (isSelf(userId) && isAdminEmail() && request.resource.data.role == 'admin')
         || (isSelf(userId)
             && unchanged('role')
             && unchanged('email')
             && unchanged('assignedTeams')
+            && unchanged('active')
             && unchanged('consents'));
 
-      // Hard deletes are admin/Cloud-Function only (deactivate instead).
       allow delete: if isAdmin();
+    }
+
+    // Reads the committed invite token and verifies it is currently redeemable
+    // for this team. Because rules see COMMITTED state, a second redemption of
+    // the same token (now used=true) fails — enforcing single use across the
+    // two writes of the claim batch.
+    function validInvite(token, teamId) {
+      return token != ''
+        && exists(/databases/$(database)/documents/inviteTokens/$(token))
+        && inviteData(token).used == false
+        && inviteData(token).get('revoked', false) == false
+        && inviteData(token).expiresAt > request.time.toMillis()
+        && inviteData(token).teamId == teamId;
+    }
+    function inviteData(token) {
+      return get(/databases/$(database)/documents/inviteTokens/$(token)).data;
+    }
+    // Deterministic pendingUsers doc id: lowercase email with '.' -> '_'
+    // (e.g. "a.b@gmail.com" -> "a_b@gmail_com"). Must match the client.
+    function emailKey() {
+      return callerEmail().replace('\\.', '_');
+    }
+    // True if an admin pre-registered this caller's email with the given role.
+    function pendingRoleIs(r) {
+      return exists(/databases/$(database)/documents/pendingUsers/$(emailKey()))
+        && get(/databases/$(database)/documents/pendingUsers/$(emailKey())).data.role == r;
+    }
+
+    // ---------------------------------------------------------------------
+    // pendingUsers/{emailKey} — admin pre-assigns a coach role before signup.
+    // On first sign-in the matching user reads their record and provisions.
+    // ---------------------------------------------------------------------
+    match /pendingUsers/{emailKey} {
+      allow get: if isSignedIn();           // claim lookup by deterministic id
+      allow list: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin()
+        || (isSignedIn() && resource.data.email.lower() == callerEmail());
+    }
+
+    // ---------------------------------------------------------------------
+    // accessRequests/{uid} — a signed-in user asks to become a coach; admin
+    // approves by writing pendingUsers / editing their users role.
+    // ---------------------------------------------------------------------
+    match /accessRequests/{reqId} {
+      allow read: if isAdmin() || isSelf(reqId);
+      allow create: if isSelf(reqId)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasAll(['email', 'requestedAt', 'status']);
+      allow update: if isAdmin()
+        || (isSelf(reqId) && request.resource.data.status == 'pending');
+      allow delete: if isAdmin() || isSelf(reqId);
     }
 
     // ---------------------------------------------------------------------
@@ -104,12 +166,16 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow read: if isStaff() || inTeam(teamId);
       allow create: if isStaff();
-      // A coach may edit a team only if assigned to it; admins edit any team.
-      allow update, delete: if coachesTeam(teamId);
+      allow update: if coachesTeam(teamId)
+        // Anyone redeeming an invite may add only THEIR OWN uid to swimmers[].
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['swimmers'])
+            && request.resource.data.swimmers.removeAll(resource.data.swimmers) == [uid()]);
+      allow delete: if coachesTeam(teamId);
     }
 
     // ---------------------------------------------------------------------
-    // events (practices / meets / socials / meetings)
+    // events
     // ---------------------------------------------------------------------
     match /events/{eventId} {
       allow read: if isStaff() || inTeam(resource.data.teamId);
@@ -118,27 +184,35 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
-    // signups (RSVPs) — a swimmer owns their own RSVP rows
+    // signups (RSVPs)
     // ---------------------------------------------------------------------
     match /signups/{signupId} {
       allow read: if isStaff() || isSelf(resource.data.swimmerId);
       allow create: if isSelf(request.resource.data.swimmerId)
+        && notBanned()
         && inTeam(request.resource.data.teamId);
-      allow update: if isStaff() || isSelf(resource.data.swimmerId);
-      allow delete: if isStaff() || isSelf(resource.data.swimmerId);
+      allow update, delete: if isStaff() || isSelf(resource.data.swimmerId);
     }
 
     // ---------------------------------------------------------------------
-    // inviteTokens — created by staff; CONSUMED only via Cloud Function.
-    // We never allow the client to flip `used` or create accounts from a token
-    // here; the function uses the Admin SDK. Clients may read a token by id to
-    // render the registration page (token id itself is the bearer secret).
+    // inviteTokens — created by staff; redeemed by flipping used:false->true.
     // ---------------------------------------------------------------------
     match /inviteTokens/{tokenId} {
-      allow get: if true; // public read-by-id so the invite page can validate
-      allow list: if isStaff(); // only staff can enumerate tokens
-      allow create: if isStaff() && coachesTeam(request.resource.data.teamId);
-      allow update, delete: if isAdmin(); // consumption handled server-side
+      allow get: if true;                    // claim page reads token by id
+      allow list: if isStaff();
+      allow create: if isStaff() && coachesTeam(request.resource.data.teamId)
+        && request.resource.data.used == false;
+      // Redeem: any signed-in user may flip an unused, unexpired, unrevoked
+      // token to used=true and stamp who claimed it. Nothing else may change.
+      allow update: if isAdmin()
+        || (isSignedIn()
+            && resource.data.used == false
+            && resource.data.get('revoked', false) == false
+            && resource.data.expiresAt > request.time.toMillis()
+            && request.resource.data.used == true
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['used', 'usedBy', 'usedAt']));
+      allow delete: if isAdmin();
     }
 
     // ---------------------------------------------------------------------
@@ -150,21 +224,16 @@ service cloud.firestore {
       allow update, delete: if coachesTeam(resource.data.teamId);
 
       match /messages/{messageId} {
-        // Members of the team can read the thread.
         allow read: if isStaff()
           || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId);
-
-        // Members may post as themselves; not if muted (mutedUsers[] on chat).
         allow create: if isSignedIn()
-          && request.resource.data.senderId == request.auth.uid
+          && notBanned()
+          && request.resource.data.senderId == uid()
           && (isStaff()
               || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId))
-          && !(request.auth.uid in
+          && !(uid() in
                get(/databases/$(database)/documents/chats/$(chatId)).data.get('mutedUsers', []));
-
-        // Authors may edit/delete their own message; coaches/admins moderate any.
-        allow update, delete: if isSelf(resource.data.senderId)
-          || isStaff();
+        allow update, delete: if isSelf(resource.data.senderId) || isStaff();
       }
     }
 
@@ -172,38 +241,27 @@ service cloud.firestore {
     // news / announcements
     // ---------------------------------------------------------------------
     match /news/{newsId} {
-      // Visible to staff, or to swimmers when targeted at a team they're in
-      // or at their role / everyone. visibleTo is an array of team IDs or the
-      // sentinel strings 'all' / 'swimmers' / 'coaches'.
       allow read: if isStaff()
         || 'all' in resource.data.visibleTo
         || role() in resource.data.visibleTo
-        || resource.data.visibleTo.hasAny(
-             request.auth.token.get('assignedTeams', []));
-      allow create: if isStaff();
-      allow update, delete: if isStaff();
+        || resource.data.visibleTo.hasAny(userDoc().get('assignedTeams', []));
+      allow create, update, delete: if isStaff();
     }
 
     // ---------------------------------------------------------------------
-    // aiSettings — strictly per-user. NOTE: raw API keys must never be written
-    // here (the app stores keys in localStorage). This doc holds only
-    // non-secret preferences (preferred provider, scraper base URL, etc.).
+    // aiSettings — per-user, non-secret prefs only (keys stay in localStorage)
     // ---------------------------------------------------------------------
     match /aiSettings/{userId} {
       allow read, write: if isSelf(userId);
     }
 
     // ---------------------------------------------------------------------
-    // performanceLogs — coaches write, swimmers read their own
+    // performanceLogs / attendance — coaches write, swimmers read their own
     // ---------------------------------------------------------------------
     match /performanceLogs/{logId} {
       allow read: if isStaff() || isSelf(resource.data.swimmerId);
       allow create, update, delete: if isStaff();
     }
-
-    // ---------------------------------------------------------------------
-    // attendance — coaches write, swimmers read their own
-    // ---------------------------------------------------------------------
     match /attendance/{attId} {
       allow read: if isStaff() || isSelf(resource.data.swimmerId);
       allow create, update, delete: if isStaff();
@@ -216,16 +274,14 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isStaff();
     }
-
     match /goals/{goalId} {
       allow read: if isStaff() || isSelf(resource.data.swimmerId);
-      // A swimmer may set their own goals; coaches may set goals for swimmers.
       allow create: if isStaff() || isSelf(request.resource.data.swimmerId);
       allow update, delete: if isStaff() || isSelf(resource.data.swimmerId);
     }
 
     // ---------------------------------------------------------------------
-    // documents (metadata for files in Storage)
+    // documents (Storage metadata)
     // ---------------------------------------------------------------------
     match /documents/{docId} {
       allow read: if isStaff() || inTeam(resource.data.teamId);
@@ -234,20 +290,19 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
-    // notifications — per-user inbox. Created by Cloud Functions; owner may
-    // read and mark read/unread (delete) their own.
+    // notifications — per-user inbox. Owner reads + marks read; staff may
+    // create notifications for others (e.g. RSVP/announcement pings).
     // ---------------------------------------------------------------------
     match /notifications/{notifId} {
       allow read: if isSelf(resource.data.userId);
       allow update: if isSelf(resource.data.userId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['read']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow delete: if isSelf(resource.data.userId);
-      allow create: if isStaff(); // fan-out also done server-side
+      allow create: if isStaff() || isSelf(request.resource.data.userId);
     }
 
     // ---------------------------------------------------------------------
-    // settings — global app/team configuration (single 'app' doc, etc.)
+    // settings — global app/team config
     // ---------------------------------------------------------------------
     match /settings/{settingId} {
       allow read: if isSignedIn();
@@ -255,15 +310,15 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
-    // auditLogs — append-only, admin-readable. Written by Cloud Functions.
+    // auditLogs — append-only client trail (admin-readable). Anyone signed in
+    // may append an entry about THEIR OWN action; nobody may edit/delete.
     // ---------------------------------------------------------------------
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow write: if false; // server-side (Admin SDK) only
+      allow create: if isSignedIn() && request.resource.data.actorId == uid();
+      allow update, delete: if false;
     }
 
-    // ---------------------------------------------------------------------
-    // Default deny — anything not matched above is rejected.
     // ---------------------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
