@@ -5,7 +5,7 @@
  *   • Profile (all): edit your own display name + phone.
  *   • Admin (admins only): club identity, coach domains, legal text, Blaze toggle.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/services/firebase";
@@ -24,8 +24,10 @@ import { Card, Spinner } from "@/components/ui";
 type Tab = "appearance" | "account" | "profile" | "admin";
 
 export default function Settings() {
-  const { role, profile, firebaseUser, refresh } = useAuth();
-  const isAdmin = role === "admin";
+  const { effectiveRole, profile, firebaseUser, refresh } = useAuth();
+  // Use the EFFECTIVE role so an admin "viewing as" a swimmer/coach does NOT
+  // see the Admin tab — the preview is faithful to the chosen role.
+  const isAdmin = effectiveRole === "admin";
   const tabs = useMemo<{ id: Tab; label: string }[]>(
     () => [
       { id: "appearance", label: "Appearance" },
@@ -120,14 +122,12 @@ function AppearanceTab() {
             );
           })}
         </div>
-        <div className="field" style={{ marginTop: "1rem", maxWidth: 220 }}>
-          <label htmlFor="custom-accent">Custom color</label>
-          <input
-            id="custom-accent"
-            type="color"
-            className="input input--color"
+        <div className="field" style={{ marginTop: "1rem" }}>
+          <label id="custom-accent-label">Custom color</label>
+          <ColorField
             value={accent ?? "#0b6bcb"}
-            onChange={(e) => setAccent(e.target.value)}
+            onChange={setAccent}
+            labelledBy="custom-accent-label"
           />
         </div>
       </Card>
@@ -151,6 +151,62 @@ function AppearanceTab() {
         </div>
       </Card>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+/** Clean custom color picker: a large swatch (opens the OS picker) + a hex
+ *  field with live validation. Avoids the raw, OS-styled <input type=color>. */
+function ColorField({
+  value,
+  onChange,
+  labelledBy,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+  labelledBy?: string;
+}) {
+  const nativeRef = useRef<HTMLInputElement>(null);
+  const [hex, setHex] = useState(value);
+
+  useEffect(() => setHex(value), [value]);
+
+  function commit(v: string) {
+    const t = v.startsWith("#") ? v : `#${v}`;
+    setHex(t);
+    if (/^#[0-9a-fA-F]{6}$/.test(t)) onChange(t.toLowerCase());
+  }
+
+  return (
+    <div className="colorfield" role="group" aria-labelledby={labelledBy}>
+      <button
+        type="button"
+        className="colorfield__swatch"
+        style={{ background: value }}
+        onClick={() => nativeRef.current?.click()}
+        aria-label="Open color picker"
+        title="Open color picker"
+      />
+      {/* Hidden native input drives the OS color picker on swatch click. */}
+      <input
+        ref={nativeRef}
+        type="color"
+        className="colorfield__native"
+        value={value}
+        onChange={(e) => commit(e.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <input
+        type="text"
+        className="input colorfield__hex"
+        value={hex}
+        onChange={(e) => commit(e.target.value)}
+        spellCheck={false}
+        maxLength={7}
+        aria-label="Hex color value"
+      />
+    </div>
   );
 }
 
@@ -331,6 +387,7 @@ interface AppSettings {
   legal: { termsVersion: string; terms: string; waiver: string };
   logoUrl?: string;
   emailNotificationsEnabled?: boolean;
+  requireInviteOnly?: boolean; // hide open self-registration; invite/approval only
 }
 const DEFAULTS: AppSettings = {
   clubName: "Mason Rec Rays",
@@ -338,6 +395,7 @@ const DEFAULTS: AppSettings = {
   allowedCoachDomains: "",
   legal: { termsVersion: "2026-06-16", terms: "Standard terms of use…", waiver: "I acknowledge the risks of swimming activities…" },
   emailNotificationsEnabled: false,
+  requireInviteOnly: true,
 };
 
 function AdminTab() {
@@ -388,7 +446,25 @@ function AdminTab() {
         </div>
       </Card>
 
-      <Card title="Coach access">
+      <Card title="Coach access & sign-ups">
+        <label className="toggle-row">
+          <span>
+            <strong>Invite-only sign-up</strong>
+            <br />
+            <span className="muted">
+              When ON, people can’t self-register — new members join only through a
+              coach’s invite link, and would-be coaches must request approval.
+              Swimmers are always invite-only regardless of this setting.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={settings.requireInviteOnly !== false}
+            onChange={(e) => setSettings({ ...settings, requireInviteOnly: e.target.checked })}
+            aria-label="Require invite-only sign-up"
+          />
+        </label>
         <div className="field">
           <label htmlFor="domains">Allowed coach email domains (comma-separated)</label>
           <input id="domains" className="input" placeholder="masonrec.org, example.com" value={settings.allowedCoachDomains} onChange={(e) => setSettings({ ...settings, allowedCoachDomains: e.target.value })} />

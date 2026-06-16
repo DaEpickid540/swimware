@@ -11,12 +11,13 @@
  *     portal button (the button is a hint; their real role always wins).
  * Swimmers still can't self-register — they join via an invite link.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import { APP_NAME, ROLE_HOME } from "@/config/constants";
 import { isAdminEmail } from "@/services/onboarding";
-import { auth } from "@/services/firebase";
+import { auth, db } from "@/services/firebase";
 import { Card } from "@/components/ui";
 import { IconRoster, IconChart, IconBell, IconSettings } from "@/components/icons";
 import type { Role } from "@/types/models";
@@ -38,6 +39,18 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Default to invite-only (most secure) until settings load.
+  const [inviteOnly, setInviteOnly] = useState(true);
+
+  useEffect(() => {
+    getDoc(doc(db, "settings", "app"))
+      .then((snap) => {
+        if (snap.exists()) setInviteOnly(snap.data().requireInviteOnly !== false);
+      })
+      .catch(() => {
+        /* keep the secure default */
+      });
+  }, []);
 
   // Resolve where to go after auth, honoring the chosen portal for admins.
   async function routeAfterAuth() {
@@ -117,7 +130,10 @@ export default function Login() {
 
   // ---- Step 2: sign in for the chosen portal --------------------------------
   const portalMeta = PORTALS.find((p) => p.role === portal)!;
-  const canRegister = portal === "coach" || portal === "parent";
+  // Open self-registration is only offered for coaches when invite-only is OFF.
+  // Swimmers always join via invite; parents are linked automatically; admins
+  // are fixed. When invite-only is ON, there is no public sign-up at all.
+  const canRegister = portal === "coach" && !inviteOnly;
 
   return (
     <div className="auth-screen">
@@ -204,7 +220,11 @@ export default function Login() {
           ) : (
             <p className="auth-note">
               {portal === "swimmer"
-                ? "Use the invite link from your coach if you don’t have an account yet."
+                ? "Swimmers join via an invite link from their coach — there’s no public sign-up."
+                : portal === "parent"
+                ? "Sign in with the email your coach has on file for your swimmer to get linked automatically."
+                : portal === "coach"
+                ? "New coaches need an admin invite/approval. Sign in if you already have access."
                 : "Admin access is limited to authorized accounts."}
             </p>
           )}

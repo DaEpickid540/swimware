@@ -365,8 +365,10 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
     // settings — global app/team config
     // ---------------------------------------------------------------------
+    // Non-sensitive app config (club name, branding, invite-only flag, legal
+    // text). Public-readable so the login page can reflect it before sign-in.
     match /settings/{settingId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 

@@ -21,9 +21,12 @@ export function ProtectedRoute({
   if (loading) return <Spinner label="Checking your account…" />;
   if (!firebaseUser) return <Navigate to="/login" state={{ from: location }} replace />;
 
-  // Admins may access any interface (real-admin override, e.g. "view as");
-  // everyone else must match their effective role. No role yet → /pending.
-  const allowed = !allow || role === "admin" || (!!effectiveRole && allow.includes(effectiveRole));
+  // Access is gated by the EFFECTIVE role so "view as" is a faithful sandbox:
+  // an admin previewing the swimmer portal gets ONLY swimmer access (no admin
+  // pages/settings) until they switch back. A real admin (no view-as) has
+  // effectiveRole === 'admin' and reaches admin routes normally.
+  // No role yet → /pending.
+  const allowed = !allow || (!!effectiveRole && allow.includes(effectiveRole));
   if (!allowed) {
     return <Navigate to={role ? "/" : "/pending"} replace />;
   }

@@ -37,9 +37,20 @@ export default function CoachDashboard() {
   const [selectedTeam, setSelectedTeam] = useState("");
   const [parentEmail, setParentEmail] = useState("");
   const [swimmerName, setSwimmerName] = useState("");
+  const [days, setDays] = useState(7); // link lifetime in days (max 30)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteExpiry, setInviteExpiry] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const DURATIONS = [
+    { label: "1 day", days: 1 },
+    { label: "3 days", days: 3 },
+    { label: "1 week", days: 7 },
+    { label: "2 weeks", days: 14 },
+    { label: "30 days (max)", days: 30 },
+  ];
 
   async function generateInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -48,14 +59,18 @@ export default function CoachDashboard() {
     setBusy(true);
     try {
       if (!firebaseUser) throw new Error("Not signed in.");
+      // Single-use link; coach-chosen lifetime, hard-capped at 30 days.
+      const ttlMs = Math.min(Math.max(days, 1), 30) * DAY_MS;
       const res = await createInviteToken({
         teamId: selectedTeam || teams[0]?.id,
         coachId: firebaseUser.uid,
         intendedSwimmerName: swimmerName || undefined,
         parentEmail: parentEmail || undefined,
+        ttlMs,
       });
       const url = `${window.location.origin}/invite/${res.token}`;
       setInviteUrl(url);
+      setInviteExpiry(res.expiresAt);
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Could not create invite.");
     } finally {
@@ -138,6 +153,25 @@ export default function CoachDashboard() {
                 onChange={(e) => setParentEmail(e.target.value)}
               />
             </div>
+            <div className="field">
+              <label htmlFor="inv-days">Link expires after</label>
+              <select
+                id="inv-days"
+                className="input"
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+              >
+                {DURATIONS.map((d) => (
+                  <option key={d.days} value={d.days}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+              <p className="muted">
+                Single-use link. Send a personalized one to anyone who missed the
+                first invite.
+              </p>
+            </div>
             {err && <p className="form-error" role="alert">{err}</p>}
             <button className="btn btn--primary" type="submit" disabled={busy}>
               {busy ? "Generating…" : "Generate invite link"}
@@ -156,6 +190,11 @@ export default function CoachDashboard() {
                   Copy
                 </button>
               </div>
+              {inviteExpiry && (
+                <p className="muted">
+                  Expires {new Date(inviteExpiry).toLocaleString()} · single use
+                </p>
+              )}
             </div>
           )}
         </Card>
