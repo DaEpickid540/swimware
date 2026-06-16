@@ -16,6 +16,9 @@ export const REC_BRAND = {
 export const FEATURE_REQUEST_FORM_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLScbrb1C4cmod_GdqzmmMi0VBDVqrdXQRCyTwmqqm6J8wy8HQA/viewform";
 
+/** Project repo — shown in the end-of-onboarding "star us" ask. */
+export const GITHUB_REPO_URL = "https://github.com/DaEpickid540/swimware";
+
 /**
  * Reference link used by the AI tools and for UX inspiration. The app does NOT
  * scrape this directly — it is passed to a user-configured web-scraper provider

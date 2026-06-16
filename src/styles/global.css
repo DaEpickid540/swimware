@@ -490,6 +490,9 @@ a {
 .welcome__step {
   min-height: 150px;
 }
+.welcome__step--form {
+  text-align: left;
+}
 .welcome__icon {
   font-size: 2.6rem;
   margin-bottom: var(--sp-2);
