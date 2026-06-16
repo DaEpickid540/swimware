@@ -7,6 +7,7 @@ import type { Role } from "@/types/models";
 import {
   IconDashboard,
   IconCalendar,
+  IconList,
   IconNews,
   IconChat,
   IconSparkles,
@@ -29,7 +30,8 @@ const ALL: NavItem[] = [
   { to: "/coach", label: "Dashboard", Icon: IconDashboard, roles: ["coach"], primary: true },
   { to: "/swimmer", label: "Dashboard", Icon: IconDashboard, roles: ["swimmer"], primary: true },
   { to: "/parent", label: "Dashboard", Icon: IconDashboard, roles: ["parent"], primary: true },
-  { to: "/events", label: "Events", Icon: IconCalendar, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
+  { to: "/calendar", label: "Calendar", Icon: IconCalendar, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
+  { to: "/events", label: "Events", Icon: IconList, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
   { to: "/chat", label: "Chat", Icon: IconChat, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
   { to: "/news", label: "News", Icon: IconNews, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
   { to: "/roster", label: "Roster", Icon: IconRoster, roles: ["admin", "coach"] },

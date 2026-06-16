@@ -20,6 +20,7 @@ const TITLES: Record<string, string> = {
   "/swimmer": "Dashboard",
   "/parent": "Parent / Guardian",
   "/swimmer/performance": "My Progress",
+  "/calendar": "Calendar",
   "/events": "Events & Schedule",
   "/news": "News & Announcements",
   "/chat": "Team Chat",

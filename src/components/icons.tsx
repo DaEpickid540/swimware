@@ -35,6 +35,12 @@ export const IconCalendar = (p: IconProps) => (
   </svg>
 );
 
+export const IconList = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+  </svg>
+);
+
 export const IconNews = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M4 5h13a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5Z" />

@@ -20,6 +20,7 @@ const CoachDashboard = lazy(() => import("@/pages/CoachDashboard"));
 const SwimmerDashboard = lazy(() => import("@/pages/SwimmerDashboard"));
 const ParentDashboard = lazy(() => import("@/pages/ParentDashboard"));
 const Events = lazy(() => import("@/pages/Events"));
+const Calendar = lazy(() => import("@/pages/Calendar"));
 const Chat = lazy(() => import("@/pages/Chat"));
 const News = lazy(() => import("@/pages/News"));
 const Roster = lazy(() => import("@/pages/Roster"));
@@ -79,6 +80,7 @@ export default function App() {
                 <Route path="/parent" element={<Page allow={["parent"]}><ParentDashboard /></Page>} />
 
                 {/* Shared (any signed-in role) */}
+                <Route path="/calendar" element={<Page><Calendar /></Page>} />
                 <Route path="/events" element={<Page><Events /></Page>} />
                 <Route path="/news" element={<Page><News /></Page>} />
                 <Route path="/chat" element={<Page><Chat /></Page>} />
