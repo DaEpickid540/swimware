@@ -9,8 +9,8 @@ import { navForRole } from "./navItems";
 import { IconLogout } from "@/components/icons";
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { role, profile, signOut } = useAuth();
-  const items = navForRole(role);
+  const { effectiveRole, profile, signOut } = useAuth();
+  const items = navForRole(effectiveRole);
 
   return (
     <nav className="sidebar" role="navigation" aria-label="Primary">
@@ -42,7 +42,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </div>
           <div className="sidebar__usermeta">
             <span className="sidebar__username">{profile?.displayName}</span>
-            <span className={`badge badge--${role}`}>{role}</span>
+            <span className={`badge badge--${effectiveRole}`}>{effectiveRole}</span>
           </div>
         </div>
         <button className="sidebar__link sidebar__signout" onClick={() => signOut()}>

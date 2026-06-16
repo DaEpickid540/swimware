@@ -6,7 +6,8 @@
  * The drawer traps focus and closes on Escape / backdrop click / navigation.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { Sidebar } from "./shell/Sidebar";
 import { TopBar } from "./shell/TopBar";
 import { BottomNav } from "./shell/BottomNav";
@@ -16,6 +17,7 @@ const TITLES: Record<string, string> = {
   "/admin": "Admin Dashboard",
   "/coach": "Coach Dashboard",
   "/swimmer": "Dashboard",
+  "/parent": "Parent / Guardian",
   "/swimmer/performance": "My Progress",
   "/events": "Events & Schedule",
   "/news": "News & Announcements",
@@ -27,6 +29,8 @@ const TITLES: Record<string, string> = {
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { role, viewAs, setViewAs } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const title = TITLES[location.pathname] ?? "Mason Rec Rays";
 
@@ -65,6 +69,20 @@ export function Layout({ children }: { children: ReactNode }) {
 
       <div className="shell__main">
         <TopBar title={title} onOpenMenu={() => setDrawerOpen(true)} />
+        {role === "admin" && viewAs && (
+          <div className="viewas-banner" role="status">
+            👁️ Viewing as <strong>{viewAs}</strong> (admin preview)
+            <button
+              className="btn btn--sm"
+              onClick={() => {
+                setViewAs(null);
+                navigate("/admin", { replace: true });
+              }}
+            >
+              Switch back to Admin
+            </button>
+          </div>
+        )}
         <main id="main-content" className="shell__content" role="main" tabIndex={-1}>
           {children}
         </main>

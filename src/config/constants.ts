@@ -47,4 +47,5 @@ export const ROLE_HOME: Record<string, string> = {
   admin: "/admin",
   coach: "/coach",
   swimmer: "/swimmer",
+  parent: "/parent",
 };

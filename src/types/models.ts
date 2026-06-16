@@ -5,7 +5,7 @@
 
 import type { Timestamp } from "firebase/firestore";
 
-export type Role = "admin" | "coach" | "swimmer";
+export type Role = "admin" | "coach" | "swimmer" | "parent";
 
 export type FireDate = Timestamp | number | null;
 
@@ -20,6 +20,7 @@ export interface AppUser {
   emergencyContact?: string | null;
   medicalNotes?: string | null;
   assignedTeams: string[];
+  linkedSwimmers?: string[]; // for parent accounts: swimmer uids they can view
   active?: boolean;
   consents?: Record<string, { version: string; at: number }>;
   createdAt?: FireDate;

@@ -7,8 +7,8 @@ import { useAuth } from "@/context/AuthContext";
 import { bottomNavForRole } from "./navItems";
 
 export function BottomNav() {
-  const { role } = useAuth();
-  const items = bottomNavForRole(role);
+  const { effectiveRole } = useAuth();
+  const items = bottomNavForRole(effectiveRole);
   if (items.length === 0) return null;
 
   return (

@@ -42,6 +42,8 @@ export function ChatRoom({ chatId }: { chatId: string }) {
   const { data: messages, loading } = useQueryData<ChatMessage>(messagesQuery);
 
   const isStaff = role === "admin" || role === "coach";
+  // Parents/guardians get read-only access (no posting, no deleting).
+  const readOnly = role === "parent";
 
   // Announce the newest message + autoscroll when the list grows.
   const lastId = messages[messages.length - 1]?.id;
@@ -93,7 +95,7 @@ export function ChatRoom({ chatId }: { chatId: string }) {
                 <span className="chat__author">{m.senderName ?? "Unknown"}</span>
               </div>
               <div className="chat__bubble">{m.text}</div>
-              {(mine || isStaff) && (
+              {!readOnly && (mine || isStaff) && (
                 <button
                   className="chat__delete"
                   onClick={() => remove(m.id)}
@@ -107,22 +109,28 @@ export function ChatRoom({ chatId }: { chatId: string }) {
         })}
       </ol>
 
-      <form className="chat__composer" onSubmit={send}>
-        <label htmlFor="chat-input" className="sr-only">
-          Type a message
-        </label>
-        <input
-          id="chat-input"
-          className="input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type a message…"
-          autoComplete="off"
-        />
-        <button type="submit" className="btn btn--primary" disabled={!text.trim()}>
-          Send
-        </button>
-      </form>
+      {readOnly ? (
+        <p className="chat__readonly" role="note">
+          👀 Read-only — guardians can view but not post in team chat.
+        </p>
+      ) : (
+        <form className="chat__composer" onSubmit={send}>
+          <label htmlFor="chat-input" className="sr-only">
+            Type a message
+          </label>
+          <input
+            id="chat-input"
+            className="input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Type a message…"
+            autoComplete="off"
+          />
+          <button type="submit" className="btn btn--primary" disabled={!text.trim()}>
+            Send
+          </button>
+        </form>
+      )}
     </div>
   );
 }

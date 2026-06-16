@@ -32,6 +32,11 @@ interface AuthState {
   firebaseUser: User | null;
   profile: AppUser | null;
   role: Role | null;
+  /** What the UI should render as. For admins this can be an impersonated
+   *  portal (view-as); for everyone else it equals `role`. */
+  effectiveRole: Role | null;
+  viewAs: Role | null;
+  setViewAs: (r: Role | null) => void;
   assignedTeams: string[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
@@ -41,6 +46,8 @@ interface AuthState {
   refresh: () => Promise<void>;
 }
 
+const VIEW_AS_KEY = "swimware.viewAs";
+
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -49,6 +56,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [assignedTeams, setAssignedTeams] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewAs, setViewAsState] = useState<Role | null>(
+    () => (sessionStorage.getItem(VIEW_AS_KEY) as Role | null) || null
+  );
+
+  function setViewAs(r: Role | null) {
+    if (r) sessionStorage.setItem(VIEW_AS_KEY, r);
+    else sessionStorage.removeItem(VIEW_AS_KEY);
+    setViewAsState(r);
+  }
+
+  // Only admins may impersonate a portal; everyone else sees their real role.
+  const effectiveRole: Role | null = role === "admin" && viewAs ? viewAs : role;
 
   async function hydrate(user: User | null) {
     if (!user) {
@@ -94,6 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       firebaseUser,
       profile,
       role,
+      effectiveRole,
+      viewAs,
+      setViewAs,
       assignedTeams,
       loading,
       signIn: async (email, password) => {
@@ -107,11 +129,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUpEmail: async (email, password) => {
         await createUserWithEmailAndPassword(auth, email, password);
       },
-      signOut: () => fbSignOut(auth),
+      signOut: () => {
+        setViewAs(null);
+        return fbSignOut(auth);
+      },
       refresh: () => hydrate(auth.currentUser),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [firebaseUser, profile, role, assignedTeams, loading]
+    [firebaseUser, profile, role, effectiveRole, viewAs, assignedTeams, loading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

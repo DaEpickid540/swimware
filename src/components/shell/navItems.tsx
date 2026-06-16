@@ -28,14 +28,16 @@ const ALL: NavItem[] = [
   { to: "/admin", label: "Dashboard", Icon: IconDashboard, roles: ["admin"], primary: true },
   { to: "/coach", label: "Dashboard", Icon: IconDashboard, roles: ["coach"], primary: true },
   { to: "/swimmer", label: "Dashboard", Icon: IconDashboard, roles: ["swimmer"], primary: true },
-  { to: "/events", label: "Events", Icon: IconCalendar, roles: ["admin", "coach", "swimmer"], primary: true },
-  { to: "/chat", label: "Chat", Icon: IconChat, roles: ["admin", "coach", "swimmer"], primary: true },
-  { to: "/news", label: "News", Icon: IconNews, roles: ["admin", "coach", "swimmer"], primary: true },
+  { to: "/parent", label: "Dashboard", Icon: IconDashboard, roles: ["parent"], primary: true },
+  { to: "/events", label: "Events", Icon: IconCalendar, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
+  { to: "/chat", label: "Chat", Icon: IconChat, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
+  { to: "/news", label: "News", Icon: IconNews, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
   { to: "/roster", label: "Roster", Icon: IconRoster, roles: ["admin", "coach"] },
   { to: "/swimmer/performance", label: "My Progress", Icon: IconChart, roles: ["swimmer"], primary: true },
   // AI tools are STAFF-ONLY (adults). Minors never see API-key entry or open AI.
   { to: "/ai", label: "AI Tools", Icon: IconSparkles, roles: ["admin", "coach"], primary: true },
-  { to: "/settings", label: "Settings", Icon: IconSettings, roles: ["admin"] },
+  // Settings is available to everyone (appearance + profile); admins get extra tabs.
+  { to: "/settings", label: "Settings", Icon: IconSettings, roles: ["admin", "coach", "swimmer", "parent"] },
 ];
 
 export function navForRole(role: Role | null): NavItem[] {

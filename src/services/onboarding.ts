@@ -109,6 +109,25 @@ export async function provisionOnSignIn(user: User): Promise<Role | null> {
     return "coach";
   }
 
+  // Is this email a linked parent/guardian of one or more swimmers? The link
+  // is written at swimmer registration (acceptInvite) under parentLinks/{key}.
+  const linkRef = doc(db, "parentLinks", emailKey(user.email ?? ""));
+  const link = await getDoc(linkRef).catch(() => null);
+  if (link?.exists()) {
+    const d = link.data();
+    await setDoc(ref, {
+      role: "parent",
+      email: user.email,
+      displayName: user.displayName ?? user.email ?? "Parent/Guardian",
+      assignedTeams: Array.isArray(d.teamIds) ? d.teamIds : [],
+      linkedSwimmers: Array.isArray(d.swimmerIds) ? d.swimmerIds : [],
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return "parent";
+  }
+
   return null; // role-less → /pending (can request coach access)
 }
 
@@ -227,6 +246,23 @@ export async function acceptInvite(
   });
   batch.update(tokenRef, { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
   batch.update(doc(db, "teams", teamId), { swimmers: arrayUnion(user.uid) });
+
+  // Record a parent/guardian link so the guardian can later sign in as a parent
+  // and get a read-only view of this swimmer. Keyed by the guardian's email.
+  const parentEmail = (profile.linkedParentEmail ?? t.parentEmail ?? "").toLowerCase();
+  if (parentEmail) {
+    batch.set(
+      doc(db, "parentLinks", emailKey(parentEmail)),
+      {
+        parentEmail,
+        swimmerIds: arrayUnion(user.uid),
+        teamIds: arrayUnion(teamId),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
   await batch.commit();
 
   await writeAudit(user.uid, user.email, "invite.accept", token, { teamId }).catch(() => {});

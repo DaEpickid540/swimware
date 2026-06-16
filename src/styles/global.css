@@ -29,10 +29,13 @@
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 6px 20px rgba(0, 0, 0, 0.06);
 
-  /* Brand */
-  --color-primary: #0b6bcb;
+  /* Brand — Mason Rec Rays: blue + green */
+  --color-primary: #0b6bcb; /* Rays blue */
   --color-primary-700: #084e96;
-  --color-accent: #06b6d4;
+  --color-secondary: #15a34a; /* Rays green */
+  --color-secondary-700: #0f7a37;
+  --color-accent: #16a34a; /* green accent */
+  --brand-gradient: linear-gradient(135deg, #0b6bcb 0%, #0e9bb0 45%, #16a34a 100%);
   --color-danger: #d12f2f;
   --color-success: #1a8f4c;
 }
@@ -74,6 +77,15 @@
   --color-accent: #00e5ff;
   --color-danger: #ff5b5b;
   --focus: #ffd400;
+}
+
+/* Compact density: tighten the spacing scale + base font a touch. */
+[data-density="compact"] {
+  --sp-3: 0.5rem;
+  --sp-4: 0.75rem;
+  --sp-5: 1rem;
+  --sp-6: 1.5rem;
+  --fs-300: 0.95rem;
 }
 
 * {
@@ -376,6 +388,21 @@ a {
   border-left-color: var(--color-accent);
 }
 
+/* Admin "view as" banner */
+.viewas-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-2) var(--sp-4);
+  background: color-mix(in srgb, var(--color-secondary) 16%, var(--surface));
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-200);
+}
+.viewas-banner button {
+  margin-left: auto;
+}
+
 /* Toggle / switch row */
 .toggle-row {
   display: flex;
@@ -548,14 +575,85 @@ a {
 /* ---------------- Auth screens ---------------- */
 .auth-screen {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: var(--sp-5);
-  background: linear-gradient(160deg, var(--bg), var(--surface-2));
+  background: var(--brand-gradient);
 }
 .auth-card {
   width: 100%;
   max-width: 420px;
+}
+
+/* Portal picker (4 sign-in options) */
+.portal-wrap {
+  width: 100%;
+  max-width: 640px;
+  text-align: center;
+  color: #fff;
+}
+.portal-title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-700);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.portal-sub {
+  margin: 0 0 var(--sp-5);
+  opacity: 0.95;
+}
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-4);
+}
+.portal-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-5) var(--sp-4);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.12s, background 0.15s;
+  backdrop-filter: blur(6px);
+  min-height: 140px;
+  justify-content: center;
+}
+.portal-card:hover {
+  background: rgba(255, 255, 255, 0.26);
+  transform: translateY(-3px);
+}
+.portal-card__icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: var(--sp-2);
+}
+.portal-card__label {
+  font-weight: 800;
+  font-size: var(--fs-400);
+}
+.portal-card__blurb {
+  font-size: var(--fs-100);
+  opacity: 0.9;
+}
+.portal-note {
+  margin-top: var(--sp-5);
+  font-size: var(--fs-200);
+  opacity: 0.9;
+}
+.portal-back {
+  color: var(--color-primary);
+  display: inline-block;
+  margin-bottom: var(--sp-2);
+}
+@media (max-width: 480px) {
+  .portal-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .auth-card--wide {
   max-width: 640px;
@@ -673,6 +771,92 @@ a {
   gap: var(--sp-2);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--border);
+}
+.chat__readonly {
+  margin: 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-200);
+}
+
+/* Tabs */
+.tablist {
+  display: flex;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-4);
+  overflow-x: auto;
+}
+.tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: var(--sp-3) var(--sp-4);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tab[aria-selected="true"] {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* Accent swatches */
+.swatches {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  position: relative;
+}
+.swatch.is-active {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg button {
+  background: var(--surface);
+  border: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font: inherit;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.seg button.is-active {
+  background: var(--color-primary);
+  color: #fff;
+}
+.provider-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.provider-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .rsvp {

@@ -18,6 +18,7 @@ const InviteRegister = lazy(() => import("@/pages/InviteRegister"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const CoachDashboard = lazy(() => import("@/pages/CoachDashboard"));
 const SwimmerDashboard = lazy(() => import("@/pages/SwimmerDashboard"));
+const ParentDashboard = lazy(() => import("@/pages/ParentDashboard"));
 const Events = lazy(() => import("@/pages/Events"));
 const Chat = lazy(() => import("@/pages/Chat"));
 const News = lazy(() => import("@/pages/News"));
@@ -26,13 +27,13 @@ const AiTools = lazy(() => import("@/pages/AiTools"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Performance = lazy(() => import("@/pages/Performance"));
 
-/** Sends a signed-in user to their role's dashboard. */
+/** Sends a signed-in user to their (effective) role's dashboard. */
 function Home() {
-  const { role, loading, firebaseUser } = useAuth();
+  const { role, effectiveRole, loading, firebaseUser } = useAuth();
   if (loading) return <Spinner />;
   if (!firebaseUser) return <Navigate to="/login" replace />;
   if (!role) return <Navigate to="/pending" replace />;
-  return <Navigate to={ROLE_HOME[role]} replace />;
+  return <Navigate to={ROLE_HOME[effectiveRole ?? role]} replace />;
 }
 
 /** Wraps a page in the app shell + role guard. */
@@ -41,7 +42,7 @@ function Page({
   allow,
 }: {
   children: React.ReactNode;
-  allow?: ("admin" | "coach" | "swimmer")[];
+  allow?: ("admin" | "coach" | "swimmer" | "parent")[];
 }) {
   return (
     <ProtectedRoute allow={allow}>
@@ -75,17 +76,19 @@ export default function App() {
                 <Route path="/coach" element={<Page allow={["coach", "admin"]}><CoachDashboard /></Page>} />
                 <Route path="/swimmer" element={<Page allow={["swimmer"]}><SwimmerDashboard /></Page>} />
                 <Route path="/swimmer/performance" element={<Page allow={["swimmer"]}><Performance /></Page>} />
+                <Route path="/parent" element={<Page allow={["parent"]}><ParentDashboard /></Page>} />
 
                 {/* Shared (any signed-in role) */}
                 <Route path="/events" element={<Page><Events /></Page>} />
                 <Route path="/news" element={<Page><News /></Page>} />
                 <Route path="/chat" element={<Page><Chat /></Page>} />
+                {/* Settings is for everyone (appearance + profile); admin tabs gated inside */}
+                <Route path="/settings" element={<Page><Settings /></Page>} />
                 {/* AI tools are staff-only (no minors using open AI / keys) */}
                 <Route path="/ai" element={<Page allow={["admin", "coach"]}><AiTools /></Page>} />
 
                 {/* Staff */}
                 <Route path="/roster" element={<Page allow={["coach", "admin"]}><Roster /></Page>} />
-                <Route path="/settings" element={<Page allow={["admin"]}><Settings /></Page>} />
 
                 <Route path="*" element={<NotFound />} />
               </Routes>

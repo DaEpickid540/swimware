@@ -56,6 +56,9 @@ service cloud.firestore {
     function isCoach() {
       return isSignedIn() && role() == 'coach';
     }
+    function isParent() {
+      return isSignedIn() && role() == 'parent';
+    }
     function isStaff() {
       return isAdmin() || isCoach();
     }
@@ -85,7 +88,9 @@ service cloud.firestore {
       allow read: if isAdmin()
         || isSelf(userId)
         || (isCoach()
-            && resource.data.get('assignedTeams', []).hasAny(userDoc().get('assignedTeams', [])));
+            && resource.data.get('assignedTeams', []).hasAny(userDoc().get('assignedTeams', [])))
+        // A parent/guardian may read the swimmer doc(s) linked to their email.
+        || (isParent() && resource.data.get('linkedParentEmail', '') == callerEmail());
 
       // CREATE — three legitimate provisioning paths, all writing your OWN doc:
       allow create: if isSelf(userId) && (
@@ -98,7 +103,12 @@ service cloud.firestore {
          request.resource.data.assignedTeams is list &&
          request.resource.data.assignedTeams.size() == 1 &&
          validInvite(request.resource.data.get('invitedVia', ''),
-                     request.resource.data.assignedTeams[0]))
+                     request.resource.data.assignedTeams[0])) ||
+        // (d) Parent/guardian whose email has a parentLinks record (created when
+        //     their swimmer registered). Self-provisioned on first sign-in.
+        (request.resource.data.role == 'parent' &&
+         exists(/databases/$(database)/documents/parentLinks/$(emailKey())) &&
+         get(/databases/$(database)/documents/parentLinks/$(emailKey())).data.parentEmail == callerEmail())
       );
 
       // UPDATE — admin can edit anyone; admin-email holder may self-promote to
@@ -151,6 +161,22 @@ service cloud.firestore {
       allow create, update: if isAdmin();
       allow delete: if isAdmin()
         || (isSignedIn() && resource.data.email.lower() == callerEmail());
+    }
+
+    // ---------------------------------------------------------------------
+    // parentLinks/{emailKey} — maps a guardian email -> their swimmers/teams.
+    // Written (merge + arrayUnion) by the swimmer during invite redemption; read
+    // only by the matching guardian so they can self-provision a parent account.
+    // ---------------------------------------------------------------------
+    match /parentLinks/{linkKey} {
+      allow get: if isSignedIn() && resource.data.parentEmail == callerEmail();
+      allow list: if isAdmin();
+      // The writer may only add THEIR OWN uid to swimmerIds (no impersonation),
+      // and the doc key must match the parent email it claims.
+      allow create, update: if isSignedIn()
+        && request.resource.data.swimmerIds.hasAny([uid()])
+        && request.resource.data.parentEmail.replace('\\.', '_') == linkKey;
+      allow delete: if isAdmin();
     }
 
     // ---------------------------------------------------------------------
@@ -256,6 +282,7 @@ service cloud.firestore {
           || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId);
         allow create: if isSignedIn()
           && notBanned()
+          && !isParent()  // guardians have READ-ONLY chat access
           && request.resource.data.senderId == uid()
           && (isStaff()
               || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId))

@@ -1,24 +1,57 @@
 /**
- * Login + account creation. NOTE: there is intentionally NO swimmer sign-up
- * here — swimmers join only via an invite link (/invite/:token). New coach
- * accounts have no role until an admin approves them (they land on /pending,
- * where they can request access).
+ * Portal-style landing + sign-in.
+ *
+ * Step 1: pick a portal — Coach, Swimmer, Parent, or Admin.
+ * Step 2: sign in (Google or email/password).
+ *
+ * After sign-in:
+ *   - ADMINS may enter ANY portal (the choice sets an admin "view-as"), which is
+ *     how one admin can preview the swimmer/coach/parent experience.
+ *   - Everyone else is routed to their real role's dashboard regardless of the
+ *     portal button (the button is a hint; their real role always wins).
+ * Swimmers still can't self-register — they join via an invite link.
  */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { APP_NAME } from "@/config/constants";
+import { APP_NAME, ROLE_HOME } from "@/config/constants";
+import { isAdminEmail } from "@/services/onboarding";
+import { auth } from "@/services/firebase";
 import { Card } from "@/components/ui";
+import { IconRoster, IconChart, IconBell, IconSettings } from "@/components/icons";
+import type { Role } from "@/types/models";
+
+const PORTALS: { role: Role; label: string; blurb: string; Icon: typeof IconRoster }[] = [
+  { role: "coach", label: "Coach", blurb: "Manage teams, events & rosters", Icon: IconRoster },
+  { role: "swimmer", label: "Swimmer", blurb: "Your schedule, news & progress", Icon: IconChart },
+  { role: "parent", label: "Parent / Guardian", blurb: "Follow your swimmer", Icon: IconBell },
+  { role: "admin", label: "Admin", blurb: "Full program control", Icon: IconSettings },
+];
 
 export default function Login() {
-  const { signIn, signInWithGoogle, signUpEmail, refresh } = useAuth();
+  const { signIn, signInWithGoogle, signUpEmail, refresh, setViewAs } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "coach">("signin");
+
+  const [portal, setPortal] = useState<Role | null>(null);
+  const [mode, setMode] = useState<"signin" | "register">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Resolve where to go after auth, honoring the chosen portal for admins.
+  async function routeAfterAuth() {
+    await refresh();
+    const current = auth.currentUser;
+    if (portal && current && isAdminEmail(current.email)) {
+      // Admin previews the chosen portal (admins can view any interface).
+      setViewAs(portal === "admin" ? null : portal);
+      navigate(ROLE_HOME[portal], { replace: true });
+    } else {
+      setViewAs(null);
+      navigate("/", { replace: true });
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -27,9 +60,7 @@ export default function Login() {
     try {
       if (mode === "signin") await signIn(email, password);
       else await signUpEmail(email, password);
-      await refresh();
-      // The index route ("/") redirects to the correct dashboard by role.
-      navigate("/", { replace: true });
+      await routeAfterAuth();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -42,8 +73,7 @@ export default function Login() {
     setBusy(true);
     try {
       await signInWithGoogle();
-      await refresh();
-      navigate("/", { replace: true });
+      await routeAfterAuth();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in failed.");
     } finally {
@@ -51,27 +81,55 @@ export default function Login() {
     }
   }
 
+  // ---- Step 1: portal picker ------------------------------------------------
+  if (!portal) {
+    return (
+      <div className="auth-screen">
+        <div className="portal-wrap">
+          <h1 className="portal-title">🐟 {APP_NAME}</h1>
+          <p className="portal-sub">Choose how you’re signing in</p>
+          <div className="portal-grid" role="list">
+            {PORTALS.map((p) => (
+              <button
+                key={p.role}
+                role="listitem"
+                className="portal-card"
+                onClick={() => {
+                  setPortal(p.role);
+                  setError(null);
+                }}
+                aria-label={`${p.label} portal — ${p.blurb}`}
+              >
+                <p.Icon className="portal-card__icon" />
+                <span className="portal-card__label">{p.label}</span>
+                <span className="portal-card__blurb">{p.blurb}</span>
+              </button>
+            ))}
+          </div>
+          <p className="portal-note">
+            Swimmers join through an invite link from their coach — there’s no public
+            sign-up.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Step 2: sign in for the chosen portal --------------------------------
+  const portalMeta = PORTALS.find((p) => p.role === portal)!;
+  const canRegister = portal === "coach" || portal === "parent";
+
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <h1 className="auth-title">🐟 {APP_NAME}</h1>
-        <p className="auth-sub">Swim team hub for coaches, swimmers &amp; families.</p>
+        <button className="link portal-back" onClick={() => setPortal(null)}>
+          ← All portals
+        </button>
+        <h1 className="auth-title">{portalMeta.label} sign-in</h1>
+        <p className="auth-sub">{portalMeta.blurb}</p>
 
-        <Card title={mode === "signin" ? "Sign in" : "Coach registration"}>
+        <Card>
           <form onSubmit={submit} noValidate>
-            {mode === "coach" && (
-              <div className="field">
-                <label htmlFor="name">Full name</label>
-                <input
-                  id="name"
-                  className="input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  autoComplete="name"
-                />
-              </div>
-            )}
             <div className="field">
               <label htmlFor="email">Email</label>
               <input
@@ -104,7 +162,7 @@ export default function Login() {
             )}
 
             <button className="btn btn--primary btn--block" type="submit" disabled={busy}>
-              {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create coach account"}
+              {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
             </button>
           </form>
 
@@ -128,23 +186,28 @@ export default function Login() {
             Continue with Google
           </button>
 
-          <p className="auth-switch">
-            {mode === "signin" ? (
-              <>
-                Are you a coach?{" "}
-                <button className="link" onClick={() => setMode("coach")}>
-                  Register here
+          {canRegister ? (
+            <p className="auth-switch">
+              {mode === "signin" ? (
+                <>
+                  New {portal}?{" "}
+                  <button className="link" onClick={() => setMode("register")}>
+                    Create an account
+                  </button>
+                </>
+              ) : (
+                <button className="link" onClick={() => setMode("signin")}>
+                  ← Back to sign in
                 </button>
-              </>
-            ) : (
-              <button className="link" onClick={() => setMode("signin")}>
-                ← Back to sign in
-              </button>
-            )}
-          </p>
-          <p className="auth-note">
-            Swimmers don’t sign up here — ask your coach for an invite link.
-          </p>
+              )}
+            </p>
+          ) : (
+            <p className="auth-note">
+              {portal === "swimmer"
+                ? "Use the invite link from your coach if you don’t have an account yet."
+                : "Admin access is limited to authorized accounts."}
+            </p>
+          )}
         </Card>
       </div>
     </div>

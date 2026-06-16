@@ -15,15 +15,17 @@ export function ProtectedRoute({
   children: ReactNode;
   allow?: Role[];
 }) {
-  const { firebaseUser, role, loading } = useAuth();
+  const { firebaseUser, role, effectiveRole, loading } = useAuth();
   const location = useLocation();
 
   if (loading) return <Spinner label="Checking your account…" />;
   if (!firebaseUser) return <Navigate to="/login" state={{ from: location }} replace />;
 
-  // Signed in but no role yet (e.g. a coach awaiting approval).
-  if (allow && (!role || !allow.includes(role))) {
-    return <Navigate to="/pending" replace />;
+  // Admins may access any interface (real-admin override, e.g. "view as");
+  // everyone else must match their effective role. No role yet → /pending.
+  const allowed = !allow || role === "admin" || (!!effectiveRole && allow.includes(effectiveRole));
+  if (!allowed) {
+    return <Navigate to={role ? "/" : "/pending"} replace />;
   }
   return <>{children}</>;
 }
