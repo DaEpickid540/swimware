@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mason Rec Rays logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b6bcb"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- stylized wave -->
+  <path d="M64 320c40-44 80-44 120 0s80 44 120 0 80-44 120 0"
+        fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" opacity="0.95"/>
+  <path d="M64 384c40-44 80-44 120 0s80 44 120 0 80-44 120 0"
+        fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" opacity="0.55"/>
+  <!-- fish / ray -->
+  <g fill="#ffffff">
+    <path d="M256 120c58 0 104 38 104 86 0 14-4 27-11 38-25-18-58-29-93-29s-68 11-93 29c-7-11-11-24-11-38 0-48 46-86 104-86z"/>
+    <circle cx="300" cy="186" r="12" fill="#0b6bcb"/>
+  </g>
+</svg>

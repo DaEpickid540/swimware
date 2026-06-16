@@ -1,0 +1,272 @@
+rules_version = '2';
+
+// =============================================================================
+// Mason Rec Rays — Firestore Security Rules
+// -----------------------------------------------------------------------------
+// Design principles:
+//   * Roles live in CUSTOM CLAIMS (request.auth.token.role), set server-side by
+//     Cloud Functions (see functions/src/index.ts). Claims cannot be forged by
+//     the client, so they are the trust anchor for role checks. We avoid reading
+//     the user doc for role to keep rules cheap and tamper-proof.
+//   * Sensitive / integrity-critical writes (creating swimmers from an invite,
+//     changing roles, audit logs) are NOT allowed directly from the client at
+//     all — they go through Cloud Functions which use the Admin SDK and bypass
+//     these rules. Such collections are therefore read-mostly here.
+//   * Team membership is expressed as arrays on the team doc (coaches[],
+//     swimmers[]) and mirrored on the user doc (assignedTeams[]). We check
+//     membership via the user's own assignedTeams claim/array to avoid extra
+//     document reads where possible.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------
+    // Helper functions
+    // ---------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      // Returns the caller's role claim, or '' if unauthenticated / unset.
+      return isSignedIn() ? (request.auth.token.role) : '';
+    }
+
+    function isAdmin() {
+      return role() == 'admin';
+    }
+
+    function isCoach() {
+      return role() == 'coach';
+    }
+
+    function isStaff() {
+      // Coaches and admins share most management privileges.
+      return isAdmin() || isCoach();
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // True if the caller belongs to teamId. assignedTeams is a custom claim
+    // (array of team IDs) kept in sync by Cloud Functions when rosters change.
+    function inTeam(teamId) {
+      return isSignedIn()
+        && request.auth.token.assignedTeams is list
+        && teamId in request.auth.token.assignedTeams;
+    }
+
+    // True if the caller is a coach assigned to this team (or an admin).
+    function coachesTeam(teamId) {
+      return isAdmin() || (isCoach() && inTeam(teamId));
+    }
+
+    // Only allow updates that DO NOT change the listed protected fields.
+    function unchanged(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] == resource.data[field];
+    }
+
+    // ---------------------------------------------------------------------
+    // users — profile documents
+    // ---------------------------------------------------------------------
+    match /users/{userId} {
+      // Anyone signed in can read staff-visible directory info; admins read all.
+      // Swimmers may read their own doc and (limited) teammates handled in app.
+      allow read: if isAdmin() || isSelf(userId) || isStaff();
+
+      // Account creation is performed by Cloud Functions (invite flow / admin
+      // promotion). The only client-side create we allow is a coach creating
+      // their OWN initial profile doc right after Auth sign-up, with role
+      // locked to 'coach' (admins are minted server-side via custom claims).
+      allow create: if isSelf(userId)
+        && request.resource.data.role == 'coach'
+        && request.resource.data.email == request.auth.token.email;
+
+      // Users may update a safe subset of their own profile. role, email,
+      // assignedTeams and consent records are protected (server-managed).
+      allow update: if isAdmin()
+        || (isSelf(userId)
+            && unchanged('role')
+            && unchanged('email')
+            && unchanged('assignedTeams')
+            && unchanged('consents'));
+
+      // Hard deletes are admin/Cloud-Function only (deactivate instead).
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // teams
+    // ---------------------------------------------------------------------
+    match /teams/{teamId} {
+      allow read: if isStaff() || inTeam(teamId);
+      allow create: if isStaff();
+      // A coach may edit a team only if assigned to it; admins edit any team.
+      allow update, delete: if coachesTeam(teamId);
+    }
+
+    // ---------------------------------------------------------------------
+    // events (practices / meets / socials / meetings)
+    // ---------------------------------------------------------------------
+    match /events/{eventId} {
+      allow read: if isStaff() || inTeam(resource.data.teamId);
+      allow create: if isStaff() && coachesTeam(request.resource.data.teamId);
+      allow update, delete: if coachesTeam(resource.data.teamId);
+    }
+
+    // ---------------------------------------------------------------------
+    // signups (RSVPs) — a swimmer owns their own RSVP rows
+    // ---------------------------------------------------------------------
+    match /signups/{signupId} {
+      allow read: if isStaff() || isSelf(resource.data.swimmerId);
+      allow create: if isSelf(request.resource.data.swimmerId)
+        && inTeam(request.resource.data.teamId);
+      allow update: if isStaff() || isSelf(resource.data.swimmerId);
+      allow delete: if isStaff() || isSelf(resource.data.swimmerId);
+    }
+
+    // ---------------------------------------------------------------------
+    // inviteTokens — created by staff; CONSUMED only via Cloud Function.
+    // We never allow the client to flip `used` or create accounts from a token
+    // here; the function uses the Admin SDK. Clients may read a token by id to
+    // render the registration page (token id itself is the bearer secret).
+    // ---------------------------------------------------------------------
+    match /inviteTokens/{tokenId} {
+      allow get: if true; // public read-by-id so the invite page can validate
+      allow list: if isStaff(); // only staff can enumerate tokens
+      allow create: if isStaff() && coachesTeam(request.resource.data.teamId);
+      allow update, delete: if isAdmin(); // consumption handled server-side
+    }
+
+    // ---------------------------------------------------------------------
+    // chats + messages
+    // ---------------------------------------------------------------------
+    match /chats/{chatId} {
+      allow read: if isStaff() || inTeam(resource.data.teamId);
+      allow create: if isStaff();
+      allow update, delete: if coachesTeam(resource.data.teamId);
+
+      match /messages/{messageId} {
+        // Members of the team can read the thread.
+        allow read: if isStaff()
+          || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId);
+
+        // Members may post as themselves; not if muted (mutedUsers[] on chat).
+        allow create: if isSignedIn()
+          && request.resource.data.senderId == request.auth.uid
+          && (isStaff()
+              || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId))
+          && !(request.auth.uid in
+               get(/databases/$(database)/documents/chats/$(chatId)).data.get('mutedUsers', []));
+
+        // Authors may edit/delete their own message; coaches/admins moderate any.
+        allow update, delete: if isSelf(resource.data.senderId)
+          || isStaff();
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // news / announcements
+    // ---------------------------------------------------------------------
+    match /news/{newsId} {
+      // Visible to staff, or to swimmers when targeted at a team they're in
+      // or at their role / everyone. visibleTo is an array of team IDs or the
+      // sentinel strings 'all' / 'swimmers' / 'coaches'.
+      allow read: if isStaff()
+        || 'all' in resource.data.visibleTo
+        || role() in resource.data.visibleTo
+        || resource.data.visibleTo.hasAny(
+             request.auth.token.get('assignedTeams', []));
+      allow create: if isStaff();
+      allow update, delete: if isStaff();
+    }
+
+    // ---------------------------------------------------------------------
+    // aiSettings — strictly per-user. NOTE: raw API keys must never be written
+    // here (the app stores keys in localStorage). This doc holds only
+    // non-secret preferences (preferred provider, scraper base URL, etc.).
+    // ---------------------------------------------------------------------
+    match /aiSettings/{userId} {
+      allow read, write: if isSelf(userId);
+    }
+
+    // ---------------------------------------------------------------------
+    // performanceLogs — coaches write, swimmers read their own
+    // ---------------------------------------------------------------------
+    match /performanceLogs/{logId} {
+      allow read: if isStaff() || isSelf(resource.data.swimmerId);
+      allow create, update, delete: if isStaff();
+    }
+
+    // ---------------------------------------------------------------------
+    // attendance — coaches write, swimmers read their own
+    // ---------------------------------------------------------------------
+    match /attendance/{attId} {
+      allow read: if isStaff() || isSelf(resource.data.swimmerId);
+      allow create, update, delete: if isStaff();
+    }
+
+    // ---------------------------------------------------------------------
+    // timeStandards & goals
+    // ---------------------------------------------------------------------
+    match /timeStandards/{stdId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    match /goals/{goalId} {
+      allow read: if isStaff() || isSelf(resource.data.swimmerId);
+      // A swimmer may set their own goals; coaches may set goals for swimmers.
+      allow create: if isStaff() || isSelf(request.resource.data.swimmerId);
+      allow update, delete: if isStaff() || isSelf(resource.data.swimmerId);
+    }
+
+    // ---------------------------------------------------------------------
+    // documents (metadata for files in Storage)
+    // ---------------------------------------------------------------------
+    match /documents/{docId} {
+      allow read: if isStaff() || inTeam(resource.data.teamId);
+      allow create: if isStaff() && coachesTeam(request.resource.data.teamId);
+      allow update, delete: if coachesTeam(resource.data.teamId);
+    }
+
+    // ---------------------------------------------------------------------
+    // notifications — per-user inbox. Created by Cloud Functions; owner may
+    // read and mark read/unread (delete) their own.
+    // ---------------------------------------------------------------------
+    match /notifications/{notifId} {
+      allow read: if isSelf(resource.data.userId);
+      allow update: if isSelf(resource.data.userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['read']);
+      allow delete: if isSelf(resource.data.userId);
+      allow create: if isStaff(); // fan-out also done server-side
+    }
+
+    // ---------------------------------------------------------------------
+    // settings — global app/team configuration (single 'app' doc, etc.)
+    // ---------------------------------------------------------------------
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // auditLogs — append-only, admin-readable. Written by Cloud Functions.
+    // ---------------------------------------------------------------------
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // server-side (Admin SDK) only
+    }
+
+    // ---------------------------------------------------------------------
+    // Default deny — anything not matched above is rejected.
+    // ---------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

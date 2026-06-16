@@ -1,0 +1,64 @@
+# ============================================================================
+# Secrets & credentials — NEVER commit these
+# ============================================================================
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+functions/.env
+functions/.env.*
+.runtimeconfig.json
+
+# Firebase Admin service-account keys (private keys!)
+*serviceAccount*.json
+*service-account*.json
+*-firebase-adminsdk-*.json
+firebase-adminsdk*.json
+google-services.json
+GoogleService-Info.plist
+
+# Local AI keys / misc secrets
+*.pem
+*.key
+secrets/
+
+# ============================================================================
+# Dependencies
+# ============================================================================
+node_modules/
+functions/node_modules/
+
+# ============================================================================
+# Build output
+# ============================================================================
+dist/
+dist-ssr/
+functions/lib/
+dev-dist/
+*.local
+
+# PWA generated artifacts (regenerated on build)
+public/sw.js
+public/workbox-*.js
+
+# ============================================================================
+# Firebase tooling
+# ============================================================================
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+database-debug.log
+pubsub-debug.log
+ui-debug.log
+
+# ============================================================================
+# Editor / OS
+# ============================================================================
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+*.swp
