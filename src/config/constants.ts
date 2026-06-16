@@ -6,6 +6,16 @@
 
 export const APP_NAME = "Mason Rec Rays";
 
+/** Official Rec Rays branding assets (bundled locally in /public/brand). */
+export const REC_BRAND = {
+  logo: "/brand/rec-rays-logo.png",
+  banner: "/brand/rec-banner.png",
+};
+
+/** Coach-facing feature-request form (opens in a new tab). */
+export const FEATURE_REQUEST_FORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLScbrb1C4cmod_GdqzmmMi0VBDVqrdXQRCyTwmqqm6J8wy8HQA/viewform";
+
 /**
  * Reference link used by the AI tools and for UX inspiration. The app does NOT
  * scrape this directly — it is passed to a user-configured web-scraper provider

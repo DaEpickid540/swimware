@@ -78,7 +78,10 @@ export default function Settings() {
 
 // ---------------------------------------------------------------------------
 function AppearanceTab() {
-  const { theme, setTheme, accent, setAccent, density, setDensity } = useTheme();
+  const { theme, setTheme, accent, setAccent, density, setDensity, recBranding, setRecBranding } =
+    useTheme();
+  const { effectiveRole } = useAuth();
+  const showBranding = effectiveRole === "coach" || effectiveRole === "admin";
   const themes: { id: ThemeName; label: string }[] = [
     { id: "light", label: "☀️ Light" },
     { id: "dark", label: "🌙 Dark" },
@@ -150,6 +153,34 @@ function AppearanceTab() {
           </button>
         </div>
       </Card>
+
+      {showBranding && (
+        <Card title="Rec Rays branding">
+          <label className="toggle-row">
+            <span>
+              <strong>Show official Mason Rec Rays logo</strong>
+              <br />
+              <span className="muted">
+                Replaces the default mark with the Rec Rays logo across your app.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={recBranding}
+              onChange={(e) => setRecBranding(e.target.checked)}
+              aria-label="Show Rec Rays branding"
+            />
+          </label>
+          {recBranding && (
+            <img
+              src="/brand/rec-rays-logo.png"
+              alt="Mason Rec Rays logo preview"
+              style={{ maxHeight: 80, marginTop: ".5rem" }}
+            />
+          )}
+        </Card>
+      )}
     </>
   );
 }

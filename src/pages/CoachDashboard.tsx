@@ -10,6 +10,8 @@ import { db } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useCollection";
 import { createInviteToken } from "@/services/onboarding";
+import { useTheme } from "@/context/ThemeContext";
+import { FEATURE_REQUEST_FORM_URL, REC_BRAND } from "@/config/constants";
 import type { Team, SwimEvent } from "@/types/models";
 import { Card, Spinner, EmptyState } from "@/components/ui";
 
@@ -24,6 +26,7 @@ export default function CoachDashboard() {
     [firebaseUser]
   );
   const { data: teams, loading } = useQueryData<Team>(teamsQ);
+  const { recBranding } = useTheme();
 
   const eventsQ = useMemo(
     () =>
@@ -89,6 +92,21 @@ export default function CoachDashboard() {
 
   return (
     <div className="page">
+      {/* Feature-request link — top of the coach experience. */}
+      <a
+        className="feature-request"
+        href={FEATURE_REQUEST_FORM_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        💡 Have an idea? <strong>Request a feature</strong> — tell us what would help
+        your team ↗
+      </a>
+
+      {recBranding && (
+        <img className="rec-banner" src={REC_BRAND.banner} alt="Mason Rec Rays summer league banner" />
+      )}
+
       <h1 className="page__title">Coach dashboard</h1>
 
       <div className="grid grid--2">

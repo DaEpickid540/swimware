@@ -3,20 +3,28 @@
  * icon-only rail via CSS. Also used as the contents of the mobile drawer.
  */
 import { NavLink } from "react-router-dom";
-import { APP_NAME } from "@/config/constants";
+import { APP_NAME, REC_BRAND } from "@/config/constants";
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { navForRole } from "./navItems";
 import { IconLogout } from "@/components/icons";
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { effectiveRole, profile, signOut } = useAuth();
+  const { recBranding } = useTheme();
   const items = navForRole(effectiveRole);
 
   return (
     <nav className="sidebar" role="navigation" aria-label="Primary">
       <div className="sidebar__brand">
-        <span className="sidebar__logo" aria-hidden="true">🐟</span>
-        <span className="sidebar__brandtext">{APP_NAME}</span>
+        {recBranding ? (
+          <img className="sidebar__brandlogo" src={REC_BRAND.logo} alt={APP_NAME} />
+        ) : (
+          <>
+            <span className="sidebar__logo" aria-hidden="true">🐟</span>
+            <span className="sidebar__brandtext">{APP_NAME}</span>
+          </>
+        )}
       </div>
 
       <ul className="sidebar__list">

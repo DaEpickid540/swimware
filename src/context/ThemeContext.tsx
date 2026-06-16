@@ -20,9 +20,11 @@ interface ThemeState {
   theme: ThemeName;
   accent: string | null; // hex override for --color-primary, or null = brand
   density: Density;
+  recBranding: boolean; // show official Rec Rays logo/banner
   setTheme: (t: ThemeName) => void;
   setAccent: (hex: string | null) => void;
   setDensity: (d: Density) => void;
+  setRecBranding: (v: boolean) => void;
   cycleTheme: () => void;
 }
 
@@ -31,6 +33,7 @@ const ThemeContext = createContext<ThemeState | undefined>(undefined);
 const K_THEME = "swimware.theme";
 const K_ACCENT = "swimware.accent";
 const K_DENSITY = "swimware.density";
+const K_RECBRAND = "swimware.recBranding";
 
 /** A few friendly accent presets users can pick from (plus a custom picker). */
 export const ACCENT_PRESETS: { label: string; value: string | null }[] = [
@@ -69,6 +72,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [density, setDensityState] = useState<Density>(
     () => (localStorage.getItem(K_DENSITY) as Density) || "comfortable"
   );
+  const [recBranding, setRecBrandingState] = useState<boolean>(
+    () => localStorage.getItem(K_RECBRAND) === "1"
+  );
 
   useEffect(() => {
     const root = document.documentElement;
@@ -100,14 +106,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(K_DENSITY, density);
   }, [density]);
 
+  useEffect(() => {
+    localStorage.setItem(K_RECBRAND, recBranding ? "1" : "0");
+  }, [recBranding]);
+
   const order: ThemeName[] = ["light", "dark", "high-contrast"];
   const value: ThemeState = {
     theme,
     accent,
     density,
+    recBranding,
     setTheme: setThemeState,
     setAccent: setAccentState,
     setDensity: setDensityState,
+    setRecBranding: setRecBrandingState,
     cycleTheme: () => setThemeState((t) => order[(order.indexOf(t) + 1) % order.length]),
   };
 
