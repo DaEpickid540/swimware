@@ -27,6 +27,9 @@ export const GITHUB_REPO_URL = "https://github.com/DaEpickid540/swimware";
 export const GOMOTION_CALENDAR_URL =
   "https://www.gomotionapp.com/team/trmwm/page/calendar#/views/month/1780286400000/1782792000000";
 
+/** Official Mason Rec Rays team site (GoMotion, team code trmwm). */
+export const TEAM_SITE_URL = "https://www.gomotionapp.com/team/trmwm/page/home";
+
 /** Current versions of legal text; bumping forces re-acceptance (see admin). */
 export const LEGAL_VERSIONS = {
   terms: "2026-06-16",

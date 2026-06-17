@@ -16,6 +16,7 @@ import {
   IconSettings,
   IconGlobe,
   IconWaves,
+  IconDoc,
 } from "@/components/icons";
 
 export interface NavItem {
@@ -38,9 +39,10 @@ const ALL: NavItem[] = [
   { to: "/news", label: "News", Icon: IconNews, roles: ["admin", "coach", "swimmer", "parent"], primary: true },
   { to: "/roster", label: "Roster", Icon: IconRoster, roles: ["admin", "coach"] },
   { to: "/swimmer/performance", label: "My Progress", Icon: IconChart, roles: ["swimmer"], primary: true },
+  { to: "/resources", label: "Resources", Icon: IconDoc, roles: ["admin", "coach", "swimmer", "parent"] },
   // External quick-access (convenience links to sites the team already uses).
   { to: "/swimcloud", label: "SwimCloud", Icon: IconWaves, roles: ["swimmer", "parent"] },
-  { to: "/mason", label: "Mason Swimming", Icon: IconGlobe, roles: ["admin", "coach", "swimmer", "parent"] },
+  { to: "/team-site", label: "Team Site", Icon: IconGlobe, roles: ["admin", "coach", "swimmer", "parent"] },
   // AI tools are STAFF-ONLY (adults). Minors never see API-key entry or open AI.
   { to: "/ai", label: "AI Tools", Icon: IconSparkles, roles: ["admin", "coach"], primary: true },
   // Settings is available to everyone (appearance + profile); admins get extra tabs.

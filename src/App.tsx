@@ -22,7 +22,8 @@ const ParentDashboard = lazy(() => import("@/pages/ParentDashboard"));
 const Events = lazy(() => import("@/pages/Events"));
 const Calendar = lazy(() => import("@/pages/Calendar"));
 const SwimCloud = lazy(() => import("@/pages/SwimCloud"));
-const MasonSwimming = lazy(() => import("@/pages/MasonSwimming"));
+const TeamSite = lazy(() => import("@/pages/TeamSite"));
+const Resources = lazy(() => import("@/pages/Resources"));
 const Chat = lazy(() => import("@/pages/Chat"));
 const News = lazy(() => import("@/pages/News"));
 const Roster = lazy(() => import("@/pages/Roster"));
@@ -85,7 +86,8 @@ export default function App() {
                 <Route path="/calendar" element={<Page><Calendar /></Page>} />
                 <Route path="/events" element={<Page><Events /></Page>} />
                 <Route path="/swimcloud" element={<Page allow={["swimmer", "parent"]}><SwimCloud /></Page>} />
-                <Route path="/mason" element={<Page><MasonSwimming /></Page>} />
+                <Route path="/team-site" element={<Page><TeamSite /></Page>} />
+                <Route path="/resources" element={<Page><Resources /></Page>} />
                 <Route path="/news" element={<Page><News /></Page>} />
                 <Route path="/chat" element={<Page><Chat /></Page>} />
                 {/* Settings is for everyone (appearance + profile); admin tabs gated inside */}
