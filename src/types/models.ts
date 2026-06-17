@@ -35,6 +35,8 @@ export interface Team {
   coaches: string[];
   swimmers: string[];
   color?: string;
+  seasonEndDate?: number | null; // ms epoch; after this, members are unlinked
+  archived?: boolean;
   createdAt?: FireDate;
   updatedAt?: FireDate;
 }

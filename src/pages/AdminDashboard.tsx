@@ -4,10 +4,19 @@
  * activity. Demonstrates the admin-only management flows end to end.
  */
 import { useMemo, useState } from "react";
+import type { User } from "firebase/auth";
 import { collection, deleteDoc, doc, limit, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useQueryData } from "@/hooks/useCollection";
-import { setUserRole, setUserActive, preRegisterCoach } from "@/services/onboarding";
+import {
+  setUserRole,
+  setUserActive,
+  preRegisterCoach,
+  createTeam,
+  setTeamSeasonEnd,
+  endTeamSeason,
+  assignCoachToTeam,
+} from "@/services/onboarding";
 import { useAuth } from "@/context/AuthContext";
 import type { AppUser, Team, AuditLog, Role } from "@/types/models";
 import { Card, StatTile, Spinner, Badge, EmptyState } from "@/components/ui";
@@ -146,6 +155,14 @@ export default function AdminDashboard() {
         </p>
       </Card>
 
+      {firebaseUser && (
+        <TeamsManager
+          teams={teams}
+          coaches={users.filter((u) => u.role === "coach")}
+          actor={firebaseUser}
+        />
+      )}
+
       <Card
         title="User management"
         actions={
@@ -231,5 +248,130 @@ export default function AdminDashboard() {
         )}
       </Card>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Team management: create teams, set the season-end date (after which members
+// are auto-unlinked), assign coaches, and run an explicit end-of-season cleanup.
+function TeamsManager({
+  teams,
+  coaches,
+  actor,
+}: {
+  teams: Team[];
+  coaches: AppUser[];
+  actor: User;
+}) {
+  const [name, setName] = useState("");
+  const [ageGroup, setAgeGroup] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const toDateInput = (ms?: number | null) =>
+    typeof ms === "number" ? new Date(ms).toISOString().slice(0, 10) : "";
+
+  async function addTeam(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await createTeam({ name: name.trim(), ageGroup, creatorUid: actor.uid, creatorIsCoach: false });
+      setName("");
+      setAgeGroup("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Teams & season">
+      <form onSubmit={addTeam} className="field-row" style={{ marginBottom: "1rem" }}>
+        <div className="field">
+          <label htmlFor="tm-name">New team name</label>
+          <input id="tm-name" className="input" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="tm-age">Age group</label>
+          <input id="tm-age" className="input" placeholder="9-10" value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} />
+        </div>
+        <button className="btn btn--primary" type="submit" disabled={busy}>
+          Create team
+        </button>
+      </form>
+
+      {teams.length === 0 ? (
+        <EmptyState message="No teams yet. Create one above." />
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <caption className="sr-only">Teams with season-end and coach controls</caption>
+            <thead>
+              <tr>
+                <th scope="col">Team</th>
+                <th scope="col">Members</th>
+                <th scope="col">Season ends</th>
+                <th scope="col">Assign coach</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teams.map((t) => (
+                <tr key={t.id}>
+                  <td>
+                    {t.name} {t.archived && <Badge tone="neutral">archived</Badge>}
+                  </td>
+                  <td>{(t.swimmers?.length ?? 0) + (t.coaches?.length ?? 0)}</td>
+                  <td>
+                    <input
+                      type="date"
+                      className="input"
+                      defaultValue={toDateInput(t.seasonEndDate)}
+                      onChange={(e) =>
+                        setTeamSeasonEnd(
+                          t.id,
+                          e.target.value ? new Date(e.target.value + "T23:59:59").getTime() : null
+                        )
+                      }
+                      aria-label={`Season end date for ${t.name}`}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      className="input"
+                      defaultValue=""
+                      aria-label={`Assign a coach to ${t.name}`}
+                      onChange={(e) => e.target.value && assignCoachToTeam(e.target.value, t.id)}
+                    >
+                      <option value="">Select coach…</option>
+                      {coaches.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn--sm btn--danger"
+                      onClick={() => {
+                        if (confirm(`End season for "${t.name}" and unlink all members?`))
+                          endTeamSeason(actor, t.id);
+                      }}
+                    >
+                      End season now
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="muted">
+        After the season-end date, members are automatically unlinked from a team
+        (they lose access on their next sign-in). “End season now” removes everyone
+        immediately.
+      </p>
+    </Card>
   );
 }

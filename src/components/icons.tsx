@@ -83,6 +83,19 @@ export const IconSettings = (p: IconProps) => (
   </svg>
 );
 
+export const IconGlobe = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+  </svg>
+);
+
+export const IconWaves = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M2 7c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 17c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+  </svg>
+);
+
 export const IconBell = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />

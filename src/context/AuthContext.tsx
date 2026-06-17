@@ -23,7 +23,15 @@ import {
   signInWithPopup,
   type User,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  getDocs,
+  collection,
+  query as fsQuery,
+  where,
+  documentId,
+} from "firebase/firestore";
 import { auth, db, googleProvider } from "@/services/firebase";
 import { provisionOnSignIn } from "@/services/onboarding";
 import type { AppUser, Role } from "@/types/models";
@@ -47,6 +55,36 @@ interface AuthState {
 }
 
 const VIEW_AS_KEY = "swimware.viewAs";
+
+/**
+ * Filters a list of team IDs down to the ones still ACTIVE — i.e. not archived
+ * and whose season-end date hasn't passed. This is how members are effectively
+ * "unlinked" from a team after the season ends without any scheduled job: the
+ * app simply stops treating expired teams as joined. Falls back to the raw list
+ * if the team docs can't be read, so a user is never accidentally locked out.
+ */
+async function filterActiveTeams(teamIds: string[]): Promise<string[]> {
+  if (teamIds.length === 0) return [];
+  try {
+    const active: string[] = [];
+    for (let i = 0; i < teamIds.length; i += 10) {
+      const chunk = teamIds.slice(i, i + 10);
+      const snap = await getDocs(
+        fsQuery(collection(db, "teams"), where(documentId(), "in", chunk))
+      );
+      snap.forEach((d) => {
+        const t = d.data();
+        const ended =
+          t.archived === true ||
+          (typeof t.seasonEndDate === "number" && t.seasonEndDate < Date.now());
+        if (!ended) active.push(d.id);
+      });
+    }
+    return active;
+  } catch {
+    return teamIds;
+  }
+}
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
@@ -88,7 +126,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = { id: snap.id, ...snap.data() } as AppUser;
       setProfile(data);
       setRole(data.role ?? null);
-      setAssignedTeams(Array.isArray(data.assignedTeams) ? data.assignedTeams : []);
+      const raw = Array.isArray(data.assignedTeams) ? data.assignedTeams : [];
+      // Drop teams whose season has ended (auto-unlink, no scheduled job).
+      setAssignedTeams(await filterActiveTeams(raw));
     } else {
       setProfile(null);
       setRole(null);

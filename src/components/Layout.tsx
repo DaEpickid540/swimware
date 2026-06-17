@@ -22,6 +22,8 @@ const TITLES: Record<string, string> = {
   "/swimmer/performance": "My Progress",
   "/calendar": "Calendar",
   "/events": "Events & Schedule",
+  "/swimcloud": "SwimCloud",
+  "/mason": "Mason Swimming",
   "/news": "News & Announcements",
   "/chat": "Team Chat",
   "/ai": "AI Tools",

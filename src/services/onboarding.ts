@@ -21,6 +21,7 @@ import {
   collection,
   writeBatch,
   arrayUnion,
+  arrayRemove,
   serverTimestamp,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
@@ -298,4 +299,70 @@ export async function assignCoachToTeam(coachUid: string, teamId: string) {
   batch.update(doc(db, "teams", teamId), { coaches: arrayUnion(coachUid) });
   batch.update(doc(db, "users", coachUid), { assignedTeams: arrayUnion(teamId) });
   await batch.commit();
+}
+
+/** Create a team (staff). Optionally seed a season-end date + age group. */
+export async function createTeam(opts: {
+  name: string;
+  ageGroup?: string;
+  seasonEndDate?: number | null;
+  creatorUid: string;
+  creatorIsCoach: boolean;
+}): Promise<string> {
+  const ref = doc(collection(db, "teams"));
+  await setDoc(ref, {
+    name: opts.name,
+    ageGroup: opts.ageGroup ?? "",
+    // A coach creating a team is added to it so they can manage it immediately.
+    coaches: opts.creatorIsCoach ? [opts.creatorUid] : [],
+    swimmers: [],
+    seasonEndDate: opts.seasonEndDate ?? null,
+    archived: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  // Keep the creating coach's own membership in sync.
+  if (opts.creatorIsCoach) {
+    await updateDoc(doc(db, "users", opts.creatorUid), {
+      assignedTeams: arrayUnion(ref.id),
+      updatedAt: serverTimestamp(),
+    });
+  }
+  return ref.id;
+}
+
+/** Set/clear a team's season-end date (staff). */
+export async function setTeamSeasonEnd(teamId: string, seasonEndDate: number | null) {
+  await updateDoc(doc(db, "teams", teamId), { seasonEndDate, updatedAt: serverTimestamp() });
+}
+
+/**
+ * Hard "end of season": unlink every member from the team. Removes the team
+ * from each member's assignedTeams and clears the team's roster arrays. Done
+ * client-side (no scheduled function needed); run by an admin or the team's
+ * coach. Members regain nothing until re-invited next season.
+ */
+export async function endTeamSeason(actor: User, teamId: string) {
+  const teamSnap = await getDoc(doc(db, "teams", teamId));
+  if (!teamSnap.exists()) return;
+  const data = teamSnap.data();
+  const members: string[] = [
+    ...(data.swimmers ?? []),
+    ...(data.coaches ?? []),
+  ];
+  const batch = writeBatch(db);
+  for (const uid of members) {
+    batch.update(doc(db, "users", uid), {
+      assignedTeams: arrayRemove(teamId),
+      updatedAt: serverTimestamp(),
+    });
+  }
+  batch.update(doc(db, "teams", teamId), {
+    swimmers: [],
+    coaches: [],
+    archived: true,
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+  await writeAudit(actor.uid, actor.email, "team.endSeason", teamId, { unlinked: members.length });
 }
