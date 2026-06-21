@@ -222,6 +222,3 @@ some richer UI is intentionally minimal in this starter):** month-grid calendar
 screens, document upload UI (Storage rules + `documents` collection ready),
 in-app notifications panel (collection + fan-out live), and FCM web push (single
 documented integration point).
-
----
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
