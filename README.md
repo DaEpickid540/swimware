@@ -200,7 +200,7 @@ app never scrapes it directly.
 > The `functions/` directory (Admin-SDK version of these flows + email/FCM
 > fan-out) is retained for teams that upgrade to **Blaze**, but the app does not
 > depend on it.
-
+ 
 ## Data model
 See `src/types/models.ts` for the full typed schema:
 `users, teams, events, signups, inviteTokens, chats/{id}/messages, news,
