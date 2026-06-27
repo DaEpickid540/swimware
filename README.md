@@ -200,7 +200,7 @@ app never scrapes it directly.
 > The `functions/` directory (Admin-SDK version of these flows + email/FCM
 > fan-out) is retained for teams that upgrade to **Blaze**, but the app does not
 > depend on it.
-
+ 
 ## Data model
 See `src/types/models.ts` for the full typed schema:
 `users, teams, events, signups, inviteTokens, chats/{id}/messages, news,
@@ -222,6 +222,3 @@ some richer UI is intentionally minimal in this starter):** month-grid calendar
 screens, document upload UI (Storage rules + `documents` collection ready),
 in-app notifications panel (collection + fan-out live), and FCM web push (single
 documented integration point).
-
----
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
