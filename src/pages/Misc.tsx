@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { requestCoachAccess } from "@/services/onboarding";
+import { friendlyMessage } from "@/utils/errors";
 import { Card } from "@/components/ui";
 
 export function Pending() {
@@ -31,7 +32,7 @@ export function Pending() {
       await requestCoachAccess(firebaseUser);
       setSent(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not send request.");
+      setErr(friendlyMessage(e, "Could not send request."));
     } finally {
       setBusy(false);
     }

@@ -43,7 +43,7 @@
 |---|---|
 | **No adult→minor private messaging** | The **only** chat that can exist is one canonical **group** chat per team (`chat` doc id must equal `teamId`, `type` fixed to `team_chat`). Security rules reject any other chat shape, so there is **no data path** to create a 1:1 / private channel. |
 | **All communication group-based & monitored** | Every message is visible to the whole team and to coaches/admins (moderation: delete/mute). A visible notice states this in the chat UI. |
-| **Parent/guardian visibility** | The swimmer account is **parent-managed** (parent completes registration & co-manages). Messages are readable from the swimmer's account, so a guardian can review them. A guardian email is captured and stored. |
+| **Parent/guardian visibility** | A dedicated, read-only **`parent` role** exists: linked via `parentLinks/{emailKey}` at swimmer registration, the guardian self-provisions on first sign-in and gets read access to their linked swimmer's profile and team chat (posting disabled) — no need to share the swimmer's own login. |
 | **Invite-only swimmer accounts** | No public swimmer sign-up exists anywhere. A swimmer doc can only be created by **redeeming a valid, unused, unexpired invite token**, enforced atomically in the rules (single-use). |
 | **No public sign-ups** | The login page offers only sign-in + (admin-approved) coach accounts. Swimmers must use a coach-generated invite link. |
 | **Minimize exposure of minors' data** | A coach can read a user's profile (age, parent/emergency contacts, medical notes) **only if they share a team**; cross-team reads are denied. Admins see all; swimmers see only themselves. Signups & attendance are team-scoped for coaches. |
@@ -60,17 +60,14 @@
 These are required for real-world compliance but must be handled by the program,
 not the app:
 
-1. **Dedicated parent accounts** — today guardians review via the swimmer's
-   account. A separate read-only **parent role** (linked to a swimmer) would be a
-   stronger control; it's a designed-but-unbuilt enhancement.
-2. **Lawyer-reviewed legal text** — the in-app terms/privacy/waiver/consent copy
+1. **Lawyer-reviewed legal text** — the in-app terms/privacy/waiver/consent copy
    are placeholders. Replace with counsel-approved text (editable in admin Settings).
-3. **Background checks & mandated-reporter training** for all coaches/admins.
-4. **Abuse / safety reporting path** (e.g., a “report a message” action routed to
+2. **Background checks & mandated-reporter training** for all coaches/admins.
+3. **Abuse / safety reporting path** (e.g., a “report a message” action routed to
    admins) — recommended next addition.
-5. **Data retention & deletion policy** — implement a documented retention window
+4. **Data retention & deletion policy** — implement a documented retention window
    and a guardian data-deletion request workflow.
-6. **Two-coach rule / no 1:1 in person** — an operational policy beyond software.
+5. **Two-coach rule / no 1:1 in person** — an operational policy beyond software.
 
 ---
 

@@ -30,8 +30,13 @@ service cloud.firestore {
     function callerEmail() {
       return request.auth != null ? request.auth.token.email.lower() : '';
     }
+    // Requires a VERIFIED email so an attacker can't self-register with an
+    // unverified allow-listed address (Firebase Auth issues the email claim
+    // immediately on sign-up, before any verification) and claim admin.
     function isAdminEmail() {
-      return callerEmail() in adminEmails();
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && callerEmail() in adminEmails();
     }
 
     // ---- Identity / role helpers (role read from the user's own doc) --------
@@ -77,6 +82,34 @@ service cloud.firestore {
         || request.resource.data[field] == resource.data[field];
     }
 
+    // ---- Consent/waiver version gate -----------------------------------
+    // settings/legalVersions is the authoritative "current version" doc
+    // (admin-writable, public-readable — see the settings match block).
+    // Bumping it there means an already-registered swimmer whose stored
+    // consents.*.version doesn't match is blocked from key actions until
+    // they re-accept (see ReConsent gate in the client), regardless of any
+    // cached client state — this is enforced here, server-side.
+    function legalVersionsDoc() {
+      return get(/databases/$(database)/documents/settings/legalVersions).data;
+    }
+    function consentsCurrent() {
+      return !exists(/databases/$(database)/documents/settings/legalVersions)
+        || (
+          userDoc().get('consents', {}).get('terms', {}).get('version', '')
+            == legalVersionsDoc().get('terms', '')
+          && userDoc().get('consents', {}).get('privacy', {}).get('version', '')
+            == legalVersionsDoc().get('privacy', '')
+          && userDoc().get('consents', {}).get('waiver', {}).get('version', '')
+            == legalVersionsDoc().get('waiver', '')
+          && userDoc().get('consents', {}).get('parent', {}).get('version', '')
+            == legalVersionsDoc().get('parentConsent', '')
+        );
+    }
+    // Only swimmers carry a consents record today — nobody else is gated.
+    function consentsOk() {
+      return role() != 'swimmer' || consentsCurrent();
+    }
+
     // ---------------------------------------------------------------------
     // users — the role/profile document (also the trust anchor)
     // ---------------------------------------------------------------------
@@ -119,8 +152,10 @@ service cloud.firestore {
             && unchanged('role')
             && unchanged('email')
             && unchanged('assignedTeams')
-            && unchanged('active')
-            && unchanged('consents'));
+            && unchanged('active'));
+            // consents is intentionally NOT in the unchanged() guard — a user
+            // must be able to re-accept a bumped terms/privacy/waiver version
+            // on their own doc (see ReConsent gate).
 
       allow delete: if isAdmin();
     }
@@ -200,10 +235,12 @@ service cloud.firestore {
       allow read: if isStaff() || inTeam(teamId);
       allow create: if isStaff();
       allow update: if coachesTeam(teamId)
-        // Anyone redeeming an invite may add only THEIR OWN uid to swimmers[].
+        // Anyone redeeming an invite may add ONLY their own uid to swimmers[],
+        // and may not remove any existing member (no roster eviction).
         || (isSignedIn()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['swimmers'])
-            && request.resource.data.swimmers.removeAll(resource.data.swimmers) == [uid()]);
+            && request.resource.data.swimmers.removeAll(resource.data.swimmers) == [uid()]
+            && resource.data.swimmers.removeAll(request.resource.data.swimmers) == []);
       allow delete: if coachesTeam(teamId);
     }
 
@@ -226,6 +263,7 @@ service cloud.firestore {
         || (isCoach() && inTeam(resource.data.teamId));
       allow create: if isSelf(request.resource.data.swimmerId)
         && notBanned()
+        && consentsOk()
         && inTeam(request.resource.data.teamId);
       allow update, delete: if isAdmin()
         || isSelf(resource.data.swimmerId)
@@ -272,25 +310,60 @@ service cloud.firestore {
         && chatId == request.resource.data.teamId
         && coachesTeam(request.resource.data.teamId);
       // Only coaches/admins may adjust moderation (mutedUsers); no type change.
-      allow update: if coachesTeam(resource.data.teamId)
-        && request.resource.data.type == resource.data.type
-        && request.resource.data.teamId == resource.data.teamId;
+      // A non-staff sender may ALSO bump ONLY their own key in lastMessageAt
+      // (the rate-limit cooldown map) — set as part of the same batch as
+      // their message create, and only to advance their own timestamp.
+      allow update: if (coachesTeam(resource.data.teamId)
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.teamId == resource.data.teamId)
+        || (isSignedIn()
+            && notBanned()
+            && inTeam(resource.data.teamId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt'])
+            && request.resource.data.lastMessageAt.diff(resource.data.get('lastMessageAt', {})).affectedKeys().hasOnly([uid()])
+            && request.resource.data.lastMessageAt[uid()] is number
+            && request.resource.data.lastMessageAt[uid()] > resource.data.get('lastMessageAt', {}).get(uid(), 0));
       allow delete: if coachesTeam(resource.data.teamId);
 
       match /messages/{messageId} {
         allow read: if isStaff()
           || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId);
+        // Abuse resistance: bounded message length, plus a per-sender cooldown
+        // enforced via chats/{chatId}.lastMessageAt.{uid} — the client bumps
+        // that field in the SAME batch as the message create, and this rule
+        // requires enough time to have passed since the sender's last message.
+        // notBanned()/inTeam() re-read the caller's LIVE users/{uid} doc on
+        // every write, so a just-deactivated or just-removed user is blocked
+        // on their very next attempt (no cached claim to go stale).
         allow create: if isSignedIn()
           && notBanned()
+          && consentsOk()
           && !isParent()  // guardians have READ-ONLY chat access
           && request.resource.data.senderId == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000
           && (isStaff()
               || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId))
           && !(uid() in
-               get(/databases/$(database)/documents/chats/$(chatId)).data.get('mutedUsers', []));
+               get(/databases/$(database)/documents/chats/$(chatId)).data.get('mutedUsers', []))
+          && request.time.toMillis()
+               - get(/databases/$(database)/documents/chats/$(chatId)).data
+                   .get('lastMessageAt', {}).get(uid(), 0) > 1200;
         // Authors may edit/delete their own message; staff moderate any.
         // (No hard delete of others' content beyond moderation = retained trail.)
-        allow update, delete: if isSelf(resource.data.senderId) || isStaff();
+        // Any team member (not just the author/staff) may flag a message for
+        // moderation review — restricted to ONLY the reported/reportedBy
+        // fields so a "report" can't be used to tamper with message content.
+        allow update: if isSelf(resource.data.senderId) || isStaff()
+          || (isSignedIn()
+              && notBanned()
+              && inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['reported', 'reportedBy'])
+              && request.resource.data.reported == true
+              && request.resource.data.reportedBy.removeAll(resource.data.get('reportedBy', [])) == [uid()]);
+        allow delete: if isSelf(resource.data.senderId) || isStaff();
       }
     }
 

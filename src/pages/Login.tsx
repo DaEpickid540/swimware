@@ -18,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { APP_NAME, ROLE_HOME } from "@/config/constants";
 import { isAdminEmail } from "@/services/onboarding";
 import { auth, db } from "@/services/firebase";
+import { friendlyMessage } from "@/utils/errors";
 import { Card } from "@/components/ui";
 import { IconRoster, IconChart, IconBell, IconSettings } from "@/components/icons";
 import type { Role } from "@/types/models";
@@ -75,7 +76,7 @@ export default function Login() {
       else await signUpEmail(email, password);
       await routeAfterAuth();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(friendlyMessage(err, "Something went wrong."));
     } finally {
       setBusy(false);
     }
@@ -88,7 +89,7 @@ export default function Login() {
       await signInWithGoogle();
       await routeAfterAuth();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-in failed.");
+      setError(friendlyMessage(err, "Google sign-in failed."));
     } finally {
       setBusy(false);
     }

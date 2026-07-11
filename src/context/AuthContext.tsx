@@ -24,13 +24,17 @@ import {
   type User,
 } from "firebase/auth";
 import {
+  clearIndexedDbPersistence,
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   collection,
   query as fsQuery,
+  terminate,
   where,
   documentId,
+  type DocumentSnapshot,
 } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/services/firebase";
 import { provisionOnSignIn } from "@/services/onboarding";
@@ -86,6 +90,29 @@ async function filterActiveTeams(teamIds: string[]): Promise<string[]> {
   }
 }
 
+// Applies a users/{uid} doc snapshot to component state. Shared by the
+// one-shot manual refresh and the live listener below so both paths treat a
+// role change or deactivation identically.
+async function applyUserSnapshot(
+  snap: DocumentSnapshot,
+  setProfile: (p: AppUser | null) => void,
+  setRole: (r: Role | null) => void,
+  setAssignedTeams: (t: string[]) => void
+) {
+  if (snap.exists()) {
+    const data = { id: snap.id, ...snap.data() } as AppUser;
+    setProfile(data);
+    setRole(data.role ?? null);
+    const raw = Array.isArray(data.assignedTeams) ? data.assignedTeams : [];
+    // Drop teams whose season has ended (auto-unlink, no scheduled job).
+    setAssignedTeams(await filterActiveTeams(raw));
+  } else {
+    setProfile(null);
+    setRole(null);
+    setAssignedTeams([]);
+  }
+}
+
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -122,22 +149,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await provisionOnSignIn(user).catch(() => null);
 
     const snap = await getDoc(doc(db, "users", user.uid));
-    if (snap.exists()) {
-      const data = { id: snap.id, ...snap.data() } as AppUser;
-      setProfile(data);
-      setRole(data.role ?? null);
-      const raw = Array.isArray(data.assignedTeams) ? data.assignedTeams : [];
-      // Drop teams whose season has ended (auto-unlink, no scheduled job).
-      setAssignedTeams(await filterActiveTeams(raw));
-    } else {
-      setProfile(null);
-      setRole(null);
-      setAssignedTeams([]);
-    }
+    await applyUserSnapshot(snap, setProfile, setRole, setAssignedTeams);
   }
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const authUnsub = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
       try {
         await hydrate(user);
@@ -145,8 +161,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     });
-    return unsub;
+    return authUnsub;
   }, []);
+
+  // Live-subscribe to the signed-in user's own doc so a role change or
+  // deactivation made elsewhere (e.g. an admin demoting/banning them) is
+  // reflected in THIS open tab immediately, instead of waiting for a token
+  // refresh, a manual refresh(), or a reload. Firestore rules already deny
+  // privileged reads/writes the instant the doc changes; this closes the
+  // matching gap in the client's own cached role/UI state.
+  useEffect(() => {
+    if (!firebaseUser) return;
+    const uid = firebaseUser.uid;
+    const unsub = onSnapshot(
+      doc(db, "users", uid),
+      (snap) => {
+        void applyUserSnapshot(snap, setProfile, setRole, setAssignedTeams);
+      },
+      () => {
+        // Permission denied (deleted/blocked doc) — drop to no role.
+        setProfile(null);
+        setRole(null);
+        setAssignedTeams([]);
+      }
+    );
+    return unsub;
+  }, [firebaseUser]);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -169,9 +209,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUpEmail: async (email, password) => {
         await createUserWithEmailAndPassword(auth, email, password);
       },
-      signOut: () => {
+      // A shared/school computer must not leave a swimmer/coach's cached
+      // profile, roster, or chat history readable in IndexedDB after
+      // sign-out. Auth sign-out alone does NOT clear Firestore's offline
+      // cache, so we explicitly terminate the client and wipe its persisted
+      // data, then hard-reload so a fresh Firestore instance re-enables
+      // persistence cleanly for whoever uses the browser next.
+      signOut: async () => {
         setViewAs(null);
-        return fbSignOut(auth);
+        await fbSignOut(auth);
+        try {
+          await terminate(db);
+          await clearIndexedDbPersistence(db);
+        } catch {
+          // Best-effort: some browsers (private mode, unsupported IndexedDB)
+          // will fail here — the Auth sign-out above has already happened.
+        }
+        window.location.assign("/login");
       },
       refresh: () => hydrate(auth.currentUser),
     }),

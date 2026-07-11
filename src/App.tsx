@@ -12,6 +12,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Layout } from "@/components/Layout";
 import { Spinner } from "@/components/ui";
 import { ROLE_HOME } from "@/config/constants";
+import { consentsAreCurrent } from "@/services/onboarding";
+import { ReConsent } from "@/pages/ReConsent";
 
 const Login = lazy(() => import("@/pages/Login"));
 const InviteRegister = lazy(() => import("@/pages/InviteRegister"));
@@ -48,9 +50,15 @@ function Page({
   children: React.ReactNode;
   allow?: ("admin" | "coach" | "swimmer" | "parent")[];
 }) {
+  const { role, profile } = useAuth();
+  // A swimmer whose stored consents don't match the app's current
+  // LEGAL_VERSIONS is blocked from every protected page (not just one route)
+  // until they re-accept — Firestore rules independently enforce the same
+  // check on chat/RSVP writes, so this isn't the only gate.
+  const consentsStale = role === "swimmer" && !consentsAreCurrent(profile?.consents);
   return (
     <ProtectedRoute allow={allow}>
-      <Layout>{children}</Layout>
+      <Layout>{consentsStale ? <ReConsent /> : children}</Layout>
     </ProtectedRoute>
   );
 }

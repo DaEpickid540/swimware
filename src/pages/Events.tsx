@@ -18,6 +18,7 @@ import { db } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useCollection";
 import type { SwimEvent, EventType, Team, Signup, RsvpStatus } from "@/types/models";
+import { friendlyMessage } from "@/utils/errors";
 import { EVENT_TYPE_LABELS } from "@/config/constants";
 import { Card, Spinner, EmptyState, Badge } from "@/components/ui";
 
@@ -282,7 +283,7 @@ function PracticeScheduler({ teams, createdBy }: { teams: Team[]; createdBy: str
       await batch.commit();
       setResult(`✅ Added ${dates.length} practice${dates.length === 1 ? "" : "s"} to the calendar.`);
     } catch (err) {
-      setResult(err instanceof Error ? err.message : "Could not create practices.");
+      setResult(friendlyMessage(err, "Could not create practices."));
     } finally {
       setBusy(false);
     }

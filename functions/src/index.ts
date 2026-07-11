@@ -149,7 +149,10 @@ export const createInvite = onCall<CreateInvitePayload>(async (req) => {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = Date.now() + (ttlMs && ttlMs > 0 ? ttlMs : DEFAULT_INVITE_TTL_MS);
 
-  await db.collection("inviteTokens").doc(token).set({
+  // Token creation + its audit entry commit as one atomic batch — an invite
+  // can never exist without a matching, immutable trail.
+  const batch = db.batch();
+  batch.set(db.collection("inviteTokens").doc(token), {
     token,
     teamId,
     coachId: caller.uid,
@@ -160,14 +163,15 @@ export const createInvite = onCall<CreateInvitePayload>(async (req) => {
     usedBy: null,
     createdAt: FieldValue.serverTimestamp(),
   });
-
-  await writeAudit({
+  batch.set(db.collection("auditLogs").doc(), {
     actorId: caller.uid,
-    actorEmail: caller.email,
+    actorEmail: caller.email ?? null,
     action: "invite.create",
     target: token,
     details: { teamId },
+    at: FieldValue.serverTimestamp(),
   });
+  await batch.commit();
 
   return { token, expiresAt };
 });
@@ -257,19 +261,22 @@ export const acceptInvite = onCall<AcceptInvitePayload>(async (req) => {
     // Burn the token.
     tx.update(tokenRef, { used: true, usedBy: caller.uid, usedAt: FieldValue.serverTimestamp() });
 
+    // Audit entry lands in the SAME transaction as the swimmer doc/token
+    // flip/roster add — it can no longer silently fail after the fact.
+    tx.set(db.collection("auditLogs").doc(), {
+      actorId: caller.uid,
+      actorEmail: caller.email ?? null,
+      action: "invite.accept",
+      target: token,
+      details: { teamId: t.teamId },
+      at: FieldValue.serverTimestamp(),
+    });
+
     return t.teamId as string;
   });
 
   // Grant role + team claim (outside the txn — Auth is not transactional).
   await auth.setCustomUserClaims(caller.uid, { role: "swimmer", assignedTeams: [teamId] });
-
-  await writeAudit({
-    actorId: caller.uid,
-    actorEmail: caller.email,
-    action: "invite.accept",
-    target: token,
-    details: { teamId },
-  });
 
   // Notify the inviting coach (best-effort).
   const team = await db.collection("teams").doc(teamId).get();
@@ -309,16 +316,21 @@ export const setUserRole = onCall<SetRolePayload>(async (req) => {
 
   const userRef = db.collection("users").doc(targetUid);
   const before = (await userRef.get()).get("role");
-  await userRef.set({ role, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-  await syncAssignedTeamsClaim(targetUid); // re-mints role + teams claim
 
-  await writeAudit({
+  // Role update + audit entry commit as one atomic batch.
+  const batch = db.batch();
+  batch.set(userRef, { role, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  batch.set(db.collection("auditLogs").doc(), {
     actorId: caller.uid,
-    actorEmail: caller.email,
+    actorEmail: caller.email ?? null,
     action: "user.role.change",
     target: targetUid,
     details: { from: before, to: role },
+    at: FieldValue.serverTimestamp(),
   });
+  await batch.commit();
+
+  await syncAssignedTeamsClaim(targetUid); // re-mints role + teams claim (Auth, not transactional with Firestore)
 
   return { ok: true };
 });
@@ -330,17 +342,24 @@ export const setUserActive = onCall<{ targetUid: string; active: boolean }>(asyn
   const caller = requireAuth(req);
   if (caller.role !== "admin") throw new HttpsError("permission-denied", "Admins only.");
   const { targetUid, active } = req.data;
-  await auth.updateUser(targetUid, { disabled: !active });
-  await db.collection("users").doc(targetUid).set(
+  await auth.updateUser(targetUid, { disabled: !active }); // Auth, not transactional with Firestore
+
+  // Firestore flag + audit entry commit as one atomic batch.
+  const batch = db.batch();
+  batch.set(
+    db.collection("users").doc(targetUid),
     { active, updatedAt: FieldValue.serverTimestamp() },
     { merge: true }
   );
-  await writeAudit({
+  batch.set(db.collection("auditLogs").doc(), {
     actorId: caller.uid,
-    actorEmail: caller.email,
+    actorEmail: caller.email ?? null,
     action: active ? "user.activate" : "user.deactivate",
     target: targetUid,
+    at: FieldValue.serverTimestamp(),
   });
+  await batch.commit();
+
   return { ok: true };
 });
 

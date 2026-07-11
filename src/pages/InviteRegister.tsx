@@ -18,6 +18,7 @@ import { acceptInvite } from "@/services/onboarding";
 import { useAuth } from "@/context/AuthContext";
 import { LEGAL_VERSIONS, APP_NAME, PARENT_CONSENT_TEXT } from "@/config/constants";
 import { Card, Spinner } from "@/components/ui";
+import { friendlyMessage } from "@/utils/errors";
 import type { InviteToken } from "@/types/models";
 
 type State = "loading" | "valid" | "invalid" | "expired" | "used" | "submitting" | "done";
@@ -86,7 +87,7 @@ export default function InviteRegister() {
       setState("done");
       setTimeout(() => navigate("/", { replace: true }), 1200);
     } catch (e2) {
-      setError(e2 instanceof Error ? e2.message : "Registration failed.");
+      setError(friendlyMessage(e2, "Registration failed."));
       setState("valid");
     }
   }

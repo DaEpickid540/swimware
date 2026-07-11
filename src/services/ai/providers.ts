@@ -51,10 +51,12 @@ export async function callGemini(req: AiRequest, apiKey: string, model: string):
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    // Key goes in a header, not the query string — URL-embedded secrets are
+    // prone to leaking via browser/proxy access logs and Referer headers.
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents,
         systemInstruction: sys ? { parts: [{ text: sys }] } : undefined,

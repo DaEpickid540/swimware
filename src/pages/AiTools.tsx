@@ -73,6 +73,8 @@ export default function AiTools() {
       const res = await fn();
       setOut(res.text);
     } catch (e) {
+      // AI provider errors (not Firebase/Firestore) are shown verbatim on
+      // purpose — e.g. "invalid API key" is actionable and not sensitive.
       setErr(e instanceof Error ? e.message : "AI request failed.");
     } finally {
       setBusy(false);

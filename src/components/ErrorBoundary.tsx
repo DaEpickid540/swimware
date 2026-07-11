@@ -37,7 +37,9 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="error-card">
           <h1>Something went wrong</h1>
           <p>An unexpected error occurred. You can try again or reload the page.</p>
-          {this.state.message && <pre className="error-detail">{this.state.message}</pre>}
+          {import.meta.env.DEV && this.state.message && (
+            <pre className="error-detail">{this.state.message}</pre>
+          )}
           <div className="btn-row">
             <button className="btn btn--primary" onClick={this.handleReset}>
               Try again

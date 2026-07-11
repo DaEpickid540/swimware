@@ -9,8 +9,11 @@
  * the known bootstrap pair so the project works out of the box.
  */
 
+// Keep this in sync with firestore.rules' adminEmails() and
+// src/services/onboarding.ts' ADMIN_EMAILS (Gmail dot-variant included).
 const FALLBACK_ADMIN_EMAILS = [
   "sarvin.sukhe@gmail.com",
+  "sarvinsukhe@gmail.com",
   "daepickid540@gmail.com",
 ];
 

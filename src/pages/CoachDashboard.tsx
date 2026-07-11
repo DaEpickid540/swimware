@@ -13,6 +13,7 @@ import { createInviteToken } from "@/services/onboarding";
 import { useTheme } from "@/context/ThemeContext";
 import { FEATURE_REQUEST_FORM_URL, REC_BRAND } from "@/config/constants";
 import type { Team, SwimEvent } from "@/types/models";
+import { friendlyMessage } from "@/utils/errors";
 import { Card, Spinner, EmptyState } from "@/components/ui";
 
 export default function CoachDashboard() {
@@ -67,6 +68,7 @@ export default function CoachDashboard() {
       const res = await createInviteToken({
         teamId: selectedTeam || teams[0]?.id,
         coachId: firebaseUser.uid,
+        coachEmail: firebaseUser.email,
         intendedSwimmerName: swimmerName || undefined,
         parentEmail: parentEmail || undefined,
         ttlMs,
@@ -75,7 +77,7 @@ export default function CoachDashboard() {
       setInviteUrl(url);
       setInviteExpiry(res.expiresAt);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Could not create invite.");
+      setErr(friendlyMessage(e2, "Could not create invite."));
     } finally {
       setBusy(false);
     }

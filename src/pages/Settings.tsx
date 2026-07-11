@@ -20,6 +20,7 @@ import {
   PROVIDER_LABELS,
 } from "@/services/authLink";
 import { Card, Spinner } from "@/components/ui";
+import { friendlyMessage } from "@/utils/errors";
 
 type Tab = "appearance" | "account" | "profile" | "admin";
 
@@ -262,7 +263,7 @@ function AccountTab() {
       reloadIds();
       setMsg("Google linked. You can now sign in with Google.");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not link Google.");
+      setErr(friendlyMessage(e, "Could not link Google."));
     }
   }
   async function doLinkEmail(e: React.FormEvent) {
@@ -276,7 +277,7 @@ function AccountTab() {
       setEmail("");
       setPassword("");
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Could not link email/password.");
+      setErr(friendlyMessage(e2, "Could not link email/password."));
     }
   }
   async function doUnlink(id: string) {
@@ -286,7 +287,7 @@ function AccountTab() {
       await unlinkProvider(id);
       reloadIds();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not unlink.");
+      setErr(friendlyMessage(e, "Could not unlink."));
     }
   }
 
@@ -387,7 +388,7 @@ function ProfileTab({
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Could not save.");
+      setErr(friendlyMessage(e2, "Could not save."));
     }
   }
 

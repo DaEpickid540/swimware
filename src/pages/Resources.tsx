@@ -27,6 +27,7 @@ import { db, storage } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useCollection";
 import type { Team } from "@/types/models";
+import { friendlyMessage } from "@/utils/errors";
 import { Card, Spinner, EmptyState, Badge } from "@/components/ui";
 
 interface ResourceDoc {
@@ -177,7 +178,7 @@ function AddResource({ teams, uploadedBy }: { teams: Team[]; uploadedBy: string 
       setFile(null);
       setMsg("✅ Resource added.");
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Could not add resource.");
+      setMsg(friendlyMessage(err, "Could not add resource."));
     } finally {
       setBusy(false);
     }

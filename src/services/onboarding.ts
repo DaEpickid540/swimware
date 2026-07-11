@@ -27,6 +27,7 @@ import {
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
 import type { Role } from "@/types/models";
+import { LEGAL_VERSIONS } from "@/config/constants";
 
 /** Mirror of the server allow-list (rules are the source of truth). Includes
  *  the Gmail dot-variant so either spelling of the address resolves to admin. */
@@ -86,6 +87,11 @@ export async function provisionOnSignIn(user: User): Promise<Role | null> {
     } else if (snap.data().role !== "admin") {
       await updateDoc(ref, { role: "admin", updatedAt: serverTimestamp() });
     }
+    // Keep the authoritative "current consent version" doc (which rules
+    // gate swimmer actions against) in sync with this build's constants.
+    // Piggybacks on any admin sign-in, same pattern as the ADMIN_EMAILS
+    // lists that are manually kept in sync across files in this app.
+    await syncLegalVersions().catch(() => {});
     return "admin";
   }
 
@@ -159,13 +165,17 @@ function newToken(): string {
 export async function createInviteToken(opts: {
   teamId: string;
   coachId: string;
+  coachEmail?: string | null;
   intendedSwimmerName?: string;
   parentEmail?: string;
   ttlMs?: number;
 }): Promise<{ token: string; expiresAt: number }> {
   const token = newToken();
   const expiresAt = Date.now() + (opts.ttlMs && opts.ttlMs > 0 ? opts.ttlMs : 7 * 24 * 60 * 60 * 1000);
-  await setDoc(doc(db, "inviteTokens", token), {
+  // Token creation + its audit entry land atomically — an invite can never
+  // exist without a matching audit trail (no separate, fallible call).
+  const batch = writeBatch(db);
+  batch.set(doc(db, "inviteTokens", token), {
     token,
     teamId: opts.teamId,
     coachId: opts.coachId,
@@ -177,7 +187,67 @@ export async function createInviteToken(opts: {
     revoked: false,
     createdAt: serverTimestamp(),
   });
+  batch.set(doc(collection(db, "auditLogs")), {
+    actorId: opts.coachId,
+    actorEmail: opts.coachEmail ?? null,
+    action: "invite.create",
+    target: token,
+    details: { teamId: opts.teamId },
+    at: serverTimestamp(),
+  });
+  await batch.commit();
   return { token, expiresAt };
+}
+
+/** Admin-writable doc mirroring LEGAL_VERSIONS — the source rules gate
+ *  swimmer actions against, so a version bump is enforced server-side too. */
+export async function syncLegalVersions() {
+  await setDoc(
+    doc(db, "settings", "legalVersions"),
+    {
+      terms: LEGAL_VERSIONS.terms,
+      privacy: LEGAL_VERSIONS.privacy,
+      waiver: LEGAL_VERSIONS.waiver,
+      parentConsent: LEGAL_VERSIONS.parentConsent,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export interface StoredConsents {
+  terms?: { version: string; at: number };
+  privacy?: { version: string; at: number };
+  waiver?: { version: string; at: number };
+  parent?: { version: string; at: number };
+}
+
+/** True if every stored consent version matches the app's current LEGAL_VERSIONS. */
+export function consentsAreCurrent(consents: StoredConsents | undefined | null): boolean {
+  if (!consents) return false;
+  return (
+    consents.terms?.version === LEGAL_VERSIONS.terms &&
+    consents.privacy?.version === LEGAL_VERSIONS.privacy &&
+    consents.waiver?.version === LEGAL_VERSIONS.waiver &&
+    consents.parent?.version === LEGAL_VERSIONS.parentConsent
+  );
+}
+
+/** Re-accept the current terms/privacy/waiver/parent-consent versions on your own doc. */
+export async function reacceptConsents(user: User) {
+  const now = Date.now();
+  await updateDoc(doc(db, "users", user.uid), {
+    consents: {
+      terms: { version: LEGAL_VERSIONS.terms, at: now },
+      privacy: { version: LEGAL_VERSIONS.privacy, at: now },
+      waiver: { version: LEGAL_VERSIONS.waiver, at: now },
+      parent: { version: LEGAL_VERSIONS.parentConsent, at: now },
+    },
+    updatedAt: serverTimestamp(),
+  });
+  await writeAudit(user.uid, user.email, "consents.reaccept", user.uid, {
+    versions: LEGAL_VERSIONS,
+  });
 }
 
 export interface SwimmerProfileInput {
@@ -264,23 +334,54 @@ export async function acceptInvite(
     );
   }
 
-  await batch.commit();
+  // Audit entry lands in the SAME atomic batch as the swimmer doc/token
+  // flip/roster add — it can no longer silently fail after the fact.
+  batch.set(doc(collection(db, "auditLogs")), {
+    actorId: user.uid,
+    actorEmail: user.email ?? null,
+    action: "invite.accept",
+    target: token,
+    details: { teamId },
+    at: serverTimestamp(),
+  });
 
-  await writeAudit(user.uid, user.email, "invite.accept", token, { teamId }).catch(() => {});
+  await batch.commit();
   return { teamId };
 }
 
-/** Admin changes a user's role (rules require admin). */
+/** Admin changes a user's role (rules require admin). Role update + audit
+ *  entry are one atomic batch — the change can't happen without a matching,
+ *  immutable trail (or vice versa). */
 export async function setUserRole(adminUser: User, targetUid: string, role: Role) {
-  await updateDoc(doc(db, "users", targetUid), { role, updatedAt: serverTimestamp() });
-  await writeAudit(adminUser.uid, adminUser.email, "user.role.change", targetUid, { to: role });
+  const before = (await getDoc(doc(db, "users", targetUid))).data()?.role ?? null;
+  const batch = writeBatch(db);
+  batch.update(doc(db, "users", targetUid), { role, updatedAt: serverTimestamp() });
+  batch.set(doc(collection(db, "auditLogs")), {
+    actorId: adminUser.uid,
+    actorEmail: adminUser.email ?? null,
+    action: "user.role.change",
+    target: targetUid,
+    details: { from: before, to: role },
+    at: serverTimestamp(),
+  });
+  await batch.commit();
 }
 
 /** Admin activates/deactivates a user (rules require admin). Note: this flags
- *  the account in Firestore — banned users are denied writes by the rules. */
+ *  the account in Firestore — banned users are denied writes by the rules.
+ *  Same atomic-batch treatment as setUserRole. */
 export async function setUserActive(adminUser: User, targetUid: string, active: boolean) {
-  await updateDoc(doc(db, "users", targetUid), { active, updatedAt: serverTimestamp() });
-  await writeAudit(adminUser.uid, adminUser.email, active ? "user.activate" : "user.deactivate", targetUid);
+  const batch = writeBatch(db);
+  batch.update(doc(db, "users", targetUid), { active, updatedAt: serverTimestamp() });
+  batch.set(doc(collection(db, "auditLogs")), {
+    actorId: adminUser.uid,
+    actorEmail: adminUser.email ?? null,
+    action: active ? "user.activate" : "user.deactivate",
+    target: targetUid,
+    details: null,
+    at: serverTimestamp(),
+  });
+  await batch.commit();
 }
 
 /** Admin pre-registers a coach by email so they're provisioned on first login. */

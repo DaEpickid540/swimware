@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -17,12 +17,17 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useCollection";
 import type { ChatMessage } from "@/types/models";
+import { friendlyMessage } from "@/utils/errors";
 import { Spinner, EmptyState } from "./ui";
+
+const MAX_MESSAGE_LENGTH = 2000;
 
 export function ChatRoom({ chatId }: { chatId: string }) {
   const { firebaseUser, profile, role } = useAuth();
@@ -53,21 +58,43 @@ export function ChatRoom({ chatId }: { chatId: string }) {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [lastId, messages]);
 
+  const [sendError, setSendError] = useState<string | null>(null);
+
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = text.trim();
+    const trimmed = text.trim().slice(0, MAX_MESSAGE_LENGTH);
     if (!trimmed || !firebaseUser) return;
     setText("");
-    await addDoc(collection(db, "chats", chatId, "messages"), {
+    setSendError(null);
+    const msgRef = doc(collection(db, "chats", chatId, "messages"));
+    const batch = writeBatch(db);
+    batch.set(msgRef, {
       senderId: firebaseUser.uid,
       senderName: profile?.displayName ?? "Anonymous",
       text: trimmed,
       createdAt: serverTimestamp(),
     });
+    // Bumps this sender's cooldown timestamp in the same batch as the
+    // message create — rules require both to land together, so a message
+    // can never be created without the rate-limit clock advancing too.
+    batch.update(doc(db, "chats", chatId), { [`lastMessageAt.${firebaseUser.uid}`]: Date.now() });
+    try {
+      await batch.commit();
+    } catch (err) {
+      setSendError(friendlyMessage(err, "Message not sent — please try again in a moment."));
+    }
   }
 
   async function remove(messageId: string) {
     await deleteDoc(doc(db, "chats", chatId, "messages", messageId));
+  }
+
+  async function report(messageId: string, currentReportedBy: string[] | undefined) {
+    if (!firebaseUser || currentReportedBy?.includes(firebaseUser.uid)) return;
+    await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
+      reported: true,
+      reportedBy: arrayUnion(firebaseUser.uid),
+    });
   }
 
   if (loading) return <Spinner label="Loading messages…" />;
@@ -89,21 +116,39 @@ export function ChatRoom({ chatId }: { chatId: string }) {
         {messages.length === 0 && <EmptyState message="No messages yet. Say hello! 👋" />}
         {messages.map((m) => {
           const mine = m.senderId === firebaseUser?.uid;
+          const alreadyReported = !!firebaseUser && !!m.reportedBy?.includes(firebaseUser.uid);
           return (
             <li key={m.id} className={`chat__msg${mine ? " chat__msg--mine" : ""}`}>
               <div className="chat__meta">
                 <span className="chat__author">{m.senderName ?? "Unknown"}</span>
+                {isStaff && m.reported && (
+                  <span className="chat__reported" role="status">
+                    🚩 Reported
+                  </span>
+                )}
               </div>
               <div className="chat__bubble">{m.text}</div>
-              {!readOnly && (mine || isStaff) && (
-                <button
-                  className="chat__delete"
-                  onClick={() => remove(m.id)}
-                  aria-label={`Delete message from ${m.senderName ?? "user"}`}
-                >
-                  Delete
-                </button>
-              )}
+              <div className="chat__actions">
+                {!readOnly && !mine && (
+                  <button
+                    className="chat__report"
+                    onClick={() => report(m.id, m.reportedBy)}
+                    disabled={alreadyReported}
+                    aria-label={`Report message from ${m.senderName ?? "user"}`}
+                  >
+                    {alreadyReported ? "Reported" : "Report"}
+                  </button>
+                )}
+                {!readOnly && (mine || isStaff) && (
+                  <button
+                    className="chat__delete"
+                    onClick={() => remove(m.id)}
+                    aria-label={`Delete message from ${m.senderName ?? "user"}`}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
             </li>
           );
         })}
@@ -125,10 +170,16 @@ export function ChatRoom({ chatId }: { chatId: string }) {
             onChange={(e) => setText(e.target.value)}
             placeholder="Type a message…"
             autoComplete="off"
+            maxLength={MAX_MESSAGE_LENGTH}
           />
           <button type="submit" className="btn btn--primary" disabled={!text.trim()}>
             Send
           </button>
+          {sendError && (
+            <p className="form-error" role="alert">
+              {sendError}
+            </p>
+          )}
         </form>
       )}
     </div>

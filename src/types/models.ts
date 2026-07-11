@@ -101,6 +101,8 @@ export interface ChatMessage {
   text: string;
   attachments?: string[];
   createdAt?: FireDate;
+  reported?: boolean;
+  reportedBy?: string[];
 }
 
 export type NewsPriority = "normal" | "high";

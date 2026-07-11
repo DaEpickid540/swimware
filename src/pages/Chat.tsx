@@ -41,6 +41,7 @@ export default function Chat() {
           teamId: activeTeam,
           type: "team_chat",
           mutedUsers: [],
+          lastMessageAt: {},
           createdAt: serverTimestamp(),
         });
       }
