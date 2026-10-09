@@ -15,6 +15,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/services/firebase";
 import { acceptInvite } from "@/services/onboarding";
+import { displayNameError, DISPLAY_NAME_MAX } from "@/services/names";
 import { useAuth } from "@/context/AuthContext";
 import { LEGAL_VERSIONS, APP_NAME, PARENT_CONSENT_TEXT } from "@/config/constants";
 import { Card, Spinner } from "@/components/ui";
@@ -59,6 +60,8 @@ export default function InviteRegister() {
     if (!accepted) return setError("You must accept the terms, privacy policy, and waiver.");
     if (!parentConsent)
       return setError("A parent or legal guardian must provide consent to continue.");
+    const nameErr = displayNameError(displayName, "swimmer");
+    if (nameErr) return setError(nameErr);
     setError(null);
     setState("submitting");
     try {
@@ -129,7 +132,7 @@ export default function InviteRegister() {
           <form onSubmit={submit} className="form-grid">
             <div className="field">
               <label htmlFor="r-name">Swimmer full name *</label>
-              <input id="r-name" className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+              <input id="r-name" className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={DISPLAY_NAME_MAX} required />
             </div>
             <div className="field">
               <label htmlFor="r-age">Age *</label>

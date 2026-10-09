@@ -16,6 +16,12 @@ export function Pending() {
     setBusy(true);
     setErr(null);
     try {
+      // Pick up a just-clicked verification link: reload the user, then force
+      // a fresh ID token so firestore.rules sees email_verified == true.
+      if (firebaseUser && !firebaseUser.emailVerified) {
+        await firebaseUser.reload();
+        await firebaseUser.getIdToken(true);
+      }
       await refresh();
       navigate("/", { replace: true });
     } finally {
@@ -46,6 +52,14 @@ export function Pending() {
           invite link from your coach. If you’re a coach, request access below and
           an admin will approve you.
         </p>
+        {firebaseUser && !firebaseUser.emailVerified && (
+          <p className="callout" role="note">
+            📧 Please verify your email first. We sent a link to{" "}
+            <strong>{firebaseUser.email}</strong>. Coach and parent/guardian access
+            only unlocks for verified addresses. After clicking the link, press
+            “Check again”.
+          </p>
+        )}
         {sent ? (
           <p role="status" className="saved-pill">
             ✓ Request sent — you’ll get access once an admin approves.

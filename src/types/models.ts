@@ -98,6 +98,8 @@ export interface ChatMessage {
   id: string;
   senderId: string;
   senderName?: string;
+  /** Sender's role at send time; rules enforce it matches their profile. */
+  senderRole?: string;
   text: string;
   attachments?: string[];
   createdAt?: FireDate;

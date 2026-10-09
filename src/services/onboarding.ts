@@ -24,7 +24,7 @@ import {
   arrayRemove,
   serverTimestamp,
 } from "firebase/firestore";
-import type { User } from "firebase/auth";
+import { sendEmailVerification, type User } from "firebase/auth";
 import { db } from "./firebase";
 import type { Role } from "@/types/models";
 
@@ -38,6 +38,16 @@ export const ADMIN_EMAILS = [
 
 export const isAdminEmail = (email?: string | null) =>
   !!email && ADMIN_EMAILS.includes(email.toLowerCase());
+
+/** Send (at most once per browser session) the email-verification link. */
+export async function requestEmailVerification(user: User) {
+  const key = `verify-sent:${user.uid}`;
+  try {
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+  } catch { /* storage blocked — just send */ }
+  await sendEmailVerification(user).catch(() => { /* rate-limited or offline */ });
+}
 
 /** Deterministic pendingUsers doc id — must match firestore.rules emailKey(). */
 export const emailKey = (email: string) => email.toLowerCase().replace(/\./g, "_");
@@ -70,6 +80,16 @@ export async function writeAudit(
 export async function provisionOnSignIn(user: User): Promise<Role | null> {
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
+
+  // Every role below is granted on the strength of the email address, and
+  // firestore.rules only trusts a VERIFIED email (password sign-ups don't
+  // prove ownership). Until the address is verified, stay role-less and make
+  // sure a verification email has gone out. Google accounts are pre-verified.
+  if (!user.emailVerified) {
+    if (snap.exists()) return (snap.data().role as Role) ?? null;
+    await requestEmailVerification(user);
+    return null;
+  }
 
   // Admin bootstrap (allowed by rules only for allow-listed emails).
   if (isAdminEmail(user.email)) {

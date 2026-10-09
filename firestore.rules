@@ -27,11 +27,19 @@ service cloud.firestore {
         'daepickid540@gmail.com'
       ];
     }
+    // The caller's email, but ONLY once verified. Email/password sign-up is
+    // enabled and never proves ownership of the address, so trusting an
+    // unverified token.email let anyone register an allow-listed admin email
+    // (or a pre-registered coach's / linked parent's email) with a password
+    // and inherit that role. Google sign-ins are always verified.
     function callerEmail() {
-      return request.auth != null ? request.auth.token.email.lower() : '';
+      return request.auth != null
+          && request.auth.token.get('email_verified', false) == true
+          && request.auth.token.get('email', '') != ''
+        ? request.auth.token.email.lower() : '';
     }
     function isAdminEmail() {
-      return callerEmail() in adminEmails();
+      return callerEmail() != '' && callerEmail() in adminEmails();
     }
 
     // ---- Identity / role helpers (role read from the user's own doc) --------
@@ -72,9 +80,26 @@ service cloud.firestore {
     function coachesTeam(teamId) {
       return isAdmin() || (isCoach() && inTeam(teamId));
     }
+    // A field counts as unchanged only if it still holds the same value.
+    // (The old `!(field in request.resource.data) || ...` treated a DELETED
+    // field as unchanged, so a banned user could delete `active` to unban
+    // themselves, since notBanned() defaults a missing `active` to true.)
     function unchanged(field) {
-      return !(field in request.resource.data)
-        || request.resource.data[field] == resource.data[field];
+      return request.resource.data.get(field, null) == resource.data.get(field, null);
+    }
+
+    // Display names: 1–60 chars, no markup characters. Words that imply
+    // authority are reserved for staff, so a swimmer or parent can't appear
+    // as "Coach Mike" in a team chat full of minors.
+    function validDisplayName(n) {
+      return n is string && n.size() >= 1 && n.size() <= 60
+        && !n.matches('.*[<>{}`\\\\].*');
+    }
+    function claimsAuthority(n) {
+      return n.lower().matches('.*\\b(coach|admin|administrator|staff|moderator|official)\\b.*');
+    }
+    function nameOkForRole(n, r) {
+      return validDisplayName(n) && (r == 'admin' || r == 'coach' || !claimsAuthority(n));
     }
 
     // ---------------------------------------------------------------------
@@ -90,25 +115,45 @@ service cloud.firestore {
         || (isCoach()
             && resource.data.get('assignedTeams', []).hasAny(userDoc().get('assignedTeams', [])))
         // A parent/guardian may read the swimmer doc(s) linked to their email.
-        || (isParent() && resource.data.get('linkedParentEmail', '') == callerEmail());
+        || (isParent() && callerEmail() != ''
+            && resource.data.get('linkedParentEmail', '').lower() == callerEmail());
 
       // CREATE — three legitimate provisioning paths, all writing your OWN doc:
-      allow create: if isSelf(userId) && (
-        // (a) Admin bootstrap: email is in the allow-list.
+      allow create: if isSelf(userId)
+        && nameOkForRole(request.resource.data.get('displayName', ''), request.resource.data.role)
+        && (
+        // (a) Admin bootstrap: verified email is in the allow-list.
         (request.resource.data.role == 'admin' && isAdminEmail()) ||
-        // (b) Coach pre-registered by an admin in pendingUsers.
-        (request.resource.data.role == 'coach' && pendingRoleIs('coach')) ||
+        // (b) Coach pre-registered by an admin in pendingUsers. Starts with no
+        //     teams and active — an admin assigns teams afterwards.
+        (request.resource.data.role == 'coach' && pendingRoleIs('coach') &&
+         request.resource.data.keys().hasOnly(['role', 'email', 'displayName', 'assignedTeams', 'active', 'createdAt', 'updatedAt']) &&
+         request.resource.data.email.lower() == callerEmail() &&
+         request.resource.data.assignedTeams == [] &&
+         request.resource.data.active == true) ||
         // (c) Swimmer redeeming a valid invite token (see validInvite()).
         (request.resource.data.role == 'swimmer' &&
          request.resource.data.assignedTeams is list &&
          request.resource.data.assignedTeams.size() == 1 &&
+         request.resource.data.get('active', true) == true &&
          validInvite(request.resource.data.get('invitedVia', ''),
                      request.resource.data.assignedTeams[0])) ||
-        // (d) Parent/guardian whose email has a parentLinks record (created when
-        //     their swimmer registered). Self-provisioned on first sign-in.
+        // (d) Parent/guardian whose verified email has a parentLinks record
+        //     (written by their swimmer at registration). The parent's teams
+        //     and swimmers are copied from that record, not chosen by the
+        //     caller: previously any field was accepted here, and since anyone
+        //     could create a parentLinks doc for their own email, a stranger
+        //     could self-register as a parent with assignedTeams of their
+        //     choosing and read that team's chat, events and documents.
         (request.resource.data.role == 'parent' &&
+         callerEmail() != '' &&
          exists(/databases/$(database)/documents/parentLinks/$(emailKey())) &&
-         get(/databases/$(database)/documents/parentLinks/$(emailKey())).data.parentEmail == callerEmail())
+         parentLink().parentEmail == callerEmail() &&
+         request.resource.data.keys().hasOnly(['role', 'email', 'displayName', 'assignedTeams', 'linkedSwimmers', 'active', 'createdAt', 'updatedAt']) &&
+         request.resource.data.email.lower() == callerEmail() &&
+         request.resource.data.get('assignedTeams', []) == parentLink().get('teamIds', []) &&
+         request.resource.data.get('linkedSwimmers', []) == parentLink().get('swimmerIds', []) &&
+         request.resource.data.active == true)
       );
 
       // UPDATE — admin can edit anyone; admin-email holder may self-promote to
@@ -120,7 +165,14 @@ service cloud.firestore {
             && unchanged('email')
             && unchanged('assignedTeams')
             && unchanged('active')
-            && unchanged('consents'));
+            && unchanged('consents')
+            // Guardian links are set at registration; changing them later would
+            // let a swimmer quietly re-point who can read their record.
+            && unchanged('linkedParentEmail')
+            && unchanged('linkedSwimmers')
+            && unchanged('invitedVia')
+            && (unchanged('displayName')
+                || nameOkForRole(request.resource.data.get('displayName', ''), resource.data.role)));
 
       allow delete: if isAdmin();
     }
@@ -147,8 +199,12 @@ service cloud.firestore {
     }
     // True if an admin pre-registered this caller's email with the given role.
     function pendingRoleIs(r) {
-      return exists(/databases/$(database)/documents/pendingUsers/$(emailKey()))
+      return callerEmail() != ''
+        && exists(/databases/$(database)/documents/pendingUsers/$(emailKey()))
         && get(/databases/$(database)/documents/pendingUsers/$(emailKey())).data.role == r;
+    }
+    function parentLink() {
+      return get(/databases/$(database)/documents/parentLinks/$(emailKey())).data;
     }
 
     // ---------------------------------------------------------------------
@@ -169,13 +225,42 @@ service cloud.firestore {
     // only by the matching guardian so they can self-provision a parent account.
     // ---------------------------------------------------------------------
     match /parentLinks/{linkKey} {
-      allow get: if isSignedIn() && resource.data.parentEmail == callerEmail();
+      allow get: if callerEmail() != '' && resource.data.parentEmail == callerEmail();
       allow list: if isAdmin();
-      // The writer may only add THEIR OWN uid to swimmerIds (no impersonation),
-      // and the doc key must match the parent email it claims.
-      allow create, update: if isSignedIn()
-        && request.resource.data.swimmerIds.hasAny([uid()])
-        && request.resource.data.parentEmail.replace('\\.', '_') == linkKey;
+
+      // Only a SWIMMER may write a link, only for the guardian email on their
+      // own record, adding only their own uid and only teams they are on.
+      // getAfter() so this also holds inside the invite-redemption batch that
+      // creates the swimmer's users doc. (Before, any signed-in account could
+      // create a link for its own email with any teams, then self-provision as
+      // a parent of those teams.)
+      function writer() {
+        return getAfter(/databases/$(database)/documents/users/$(uid())).data;
+      }
+      function addedOnly(field, allowed) {
+        return request.resource.data.get(field, []).toSet()
+          .difference(resource == null ? [].toSet() : resource.data.get(field, []).toSet())
+          .hasOnly(allowed);
+      }
+      function keepsExisting(field) {
+        return resource == null || request.resource.data.get(field, []).hasAll(resource.data.get(field, []));
+      }
+      function validLinkWrite() {
+        return isSignedIn()
+          && writer().role == 'swimmer'
+          && request.resource.data.keys().hasOnly(['parentEmail', 'swimmerIds', 'teamIds', 'updatedAt'])
+          && request.resource.data.parentEmail is string
+          && request.resource.data.parentEmail == writer().get('linkedParentEmail', '').lower()
+          && request.resource.data.parentEmail.replace('\\.', '_') == linkKey
+          && request.resource.data.swimmerIds is list
+          && request.resource.data.get('teamIds', []) is list
+          && addedOnly('swimmerIds', [uid()])
+          && addedOnly('teamIds', writer().get('assignedTeams', []))
+          && keepsExisting('swimmerIds')
+          && keepsExisting('teamIds');
+      }
+      allow create: if validLinkWrite();
+      allow update: if validLinkWrite() && resource.data.parentEmail == request.resource.data.parentEmail;
       allow delete: if isAdmin();
     }
 
@@ -280,17 +365,31 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isStaff()
           || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId);
+        // senderName and senderRole must match the sender's own profile, so
+        // the label on a message is never just whatever the client typed.
         allow create: if isSignedIn()
           && notBanned()
           && !isParent()  // guardians have READ-ONLY chat access
           && request.resource.data.senderId == uid()
+          && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'senderRole', 'text', 'attachments', 'createdAt'])
+          && request.resource.data.get('senderName', '') == userDoc().get('displayName', '')
+          && request.resource.data.get('senderRole', '') == role()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 4000
           && (isStaff()
               || inTeam(get(/databases/$(database)/documents/chats/$(chatId)).data.teamId))
           && !(uid() in
                get(/databases/$(database)/documents/chats/$(chatId)).data.get('mutedUsers', []));
         // Authors may edit/delete their own message; staff moderate any.
         // (No hard delete of others' content beyond moderation = retained trail.)
-        allow update, delete: if isSelf(resource.data.senderId) || isStaff();
+        // Authors may edit only their text (never re-label who sent it);
+        // staff moderate freely.
+        allow update: if isStaff()
+          || (isSelf(resource.data.senderId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() <= 4000);
+        allow delete: if isSelf(resource.data.senderId) || isStaff();
       }
     }
 
@@ -378,7 +477,14 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow create: if isSignedIn() && request.resource.data.actorId == uid();
+      // Fixed shape and a server timestamp, so an entry can't be backdated or
+      // padded with fields that impersonate some other actor.
+      allow create: if isSignedIn() && request.resource.data.actorId == uid()
+        && request.resource.data.keys().hasOnly(['actorId', 'actorEmail', 'action', 'target', 'details', 'at'])
+        && request.resource.data.at == request.time
+        && request.resource.data.action is string && request.resource.data.action.size() <= 64
+        && (request.resource.data.get('actorEmail', null) == null
+            || request.resource.data.actorEmail == request.auth.token.get('email', ''));
       allow update, delete: if false;
     }
 

@@ -20,6 +20,7 @@ import {
   PROVIDER_LABELS,
 } from "@/services/authLink";
 import { Card, Spinner } from "@/components/ui";
+import { displayNameError, DISPLAY_NAME_MAX } from "@/services/names";
 
 type Tab = "appearance" | "account" | "profile" | "admin";
 
@@ -368,6 +369,7 @@ function ProfileTab({
   phone: string;
   onSaved: () => Promise<void>;
 }) {
+  const { role } = useAuth();
   const [name, setName] = useState(displayName);
   const [tel, setTel] = useState(phone);
   const [saved, setSaved] = useState(false);
@@ -377,6 +379,9 @@ function ProfileTab({
     e.preventDefault();
     if (!uid) return;
     setErr(null);
+    // Only validate a changed name, matching firestore.rules.
+    const nameErr = name === displayName ? null : displayNameError(name, role);
+    if (nameErr) return setErr(nameErr);
     try {
       await updateDoc(doc(db, "users", uid), {
         displayName: name,
@@ -396,7 +401,7 @@ function ProfileTab({
       <form onSubmit={save}>
         <div className="field">
           <label htmlFor="p-name">Display name</label>
-          <input id="p-name" className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input id="p-name" className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={DISPLAY_NAME_MAX} required />
         </div>
         <div className="field">
           <label htmlFor="p-phone">Phone (optional)</label>

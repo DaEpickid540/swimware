@@ -58,9 +58,12 @@ export function ChatRoom({ chatId }: { chatId: string }) {
     const trimmed = text.trim();
     if (!trimmed || !firebaseUser) return;
     setText("");
+    // firestore.rules requires senderName/senderRole to match the sender's
+    // own profile, so the staff badge below can be trusted.
     await addDoc(collection(db, "chats", chatId, "messages"), {
       senderId: firebaseUser.uid,
-      senderName: profile?.displayName ?? "Anonymous",
+      senderName: profile?.displayName ?? "",
+      senderRole: role ?? "",
       text: trimmed,
       createdAt: serverTimestamp(),
     });
@@ -92,7 +95,10 @@ export function ChatRoom({ chatId }: { chatId: string }) {
           return (
             <li key={m.id} className={`chat__msg${mine ? " chat__msg--mine" : ""}`}>
               <div className="chat__meta">
-                <span className="chat__author">{m.senderName ?? "Unknown"}</span>
+                <span className="chat__author">{m.senderName || "Unknown"}</span>
+                {(m.senderRole === "coach" || m.senderRole === "admin") && (
+                  <span className={`badge badge--${m.senderRole}`}>{m.senderRole === "admin" ? "Admin" : "Coach"}</span>
+                )}
               </div>
               <div className="chat__bubble">{m.text}</div>
               {!readOnly && (mine || isStaff) && (
